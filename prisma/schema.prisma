@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Animal {
+  numero     String      @id // "0", "00", "01"..."36" — string, NUNCA Int
+  nombre     String
+  imagen     String?
+  resultados Resultado[]
+}
+
+model Resultado {
+  id        String   @id @default(cuid())
+  fecha     DateTime @db.Date
+  hora      Int // hora del sorteo, 9 a 19 (11 sorteos/día, uno cada hora)
+  numero    String
+  animal    Animal   @relation(fields: [numero], references: [numero])
+  createdAt DateTime @default(now())
+
+  @@unique([fecha, hora]) // evita cargar dos veces el mismo sorteo del día
+}
