@@ -4,6 +4,9 @@ import { COOKIE_ADMIN_SESSION, isAdminSession } from "@/lib/auth";
 import { HORAS_SORTEO, parseFechaYYYYMMDD } from "@/lib/fecha";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function POST(request: Request) {
   const session = cookies().get(COOKIE_ADMIN_SESSION)?.value;
   if (!isAdminSession(session)) {
