@@ -1,28 +1,354 @@
 generator client {
+
   provider      = "prisma-client-js"
+
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
+
 }
+
+
 
 datasource db {
+
   provider  = "postgresql"
+
   url       = env("DATABASE_URL")
+
   directUrl = env("DIRECT_URL")
+
 }
+
+
 
 model Animal {
-  numero     String      @id // "0", "00", "01"..."36" — string, NUNCA Int
+
+  numero     String        @id // "0", "00", "01"..."36" — string, NUNCA Int
+
   nombre     String
+
   imagen     String?
+
   resultados Resultado[]
+
+  lineas     TicketLinea[] // apuestas históricas que referencian este animal
+
 }
+
+
 
 model Resultado {
+
   id        String   @id @default(cuid())
+
   fecha     DateTime @db.Date
+
   hora      Int // hora del sorteo, 9 a 19 (11 sorteos/día, uno cada hora)
+
   numero    String
+
   animal    Animal   @relation(fields: [numero], references: [numero])
+
   createdAt DateTime @default(now())
 
+
+
   @@unique([fecha, hora]) // evita cargar dos veces el mismo sorteo del día
+
 }
+
+
+
+/// Configuración global del negocio (p. ej. MULTIPLICADOR_PREMIO = 30).
+
+model ConfigNegocio {
+
+  clave     String   @id
+
+  valorInt  Int
+
+  updatedAt DateTime @updatedAt
+
+}
+
+
+
+/// Contador diario para numeroVisible (usar FOR UPDATE en la TX de emisión).
+
+model TicketCounter {
+
+  fechaJuego   DateTime @id @db.Date
+
+  ultimoNumero Int      @default(0)
+
+}
+
+
+
+enum EstadoTicket {
+
+  EMITIDO
+
+  ANULADO
+
+}
+
+
+
+enum RolUsuario {
+
+  ADMIN
+
+  VENDEDOR
+
+}
+
+
+
+/// Cuenta de acceso (ADMIN o VENDEDOR). Soft-delete vía activo=false.
+
+/// No se crean usuarios en seed; el ADMIN inicial se provisionará en una fase posterior.
+
+model Usuario {
+
+  id           String          @id @default(cuid())
+
+  nombre       String
+
+  /// Identificador de login (único).
+
+  usuario      String          @unique
+
+  /// Hash de contraseña (nunca texto plano).
+
+  passwordHash String
+
+  rol          RolUsuario
+
+  activo       Boolean         @default(true)
+
+  createdAt    DateTime        @default(now())
+
+  updatedAt    DateTime        @updatedAt
+
+  lastLoginAt  DateTime?
+
+  sesiones     UsuarioSesion[]
+
+  ticketsVendidos Ticket[]     @relation("TicketVendedor")
+
+  ticketsAnulados Ticket[]     @relation("TicketAnuladoPor")
+
+  auditorias   Auditoria[]
+
+
+
+  @@index([rol, activo])
+
+}
+
+
+
+/// Sesión autenticada. La cookie httpOnly guardará el token; aquí solo su hash.
+
+model UsuarioSesion {
+
+  id         String   @id @default(cuid())
+
+  usuarioId  String
+
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  tokenHash  String   @unique
+
+  expiresAt  DateTime
+
+  createdAt  DateTime @default(now())
+
+  lastUsedAt DateTime?
+
+
+
+  @@index([usuarioId])
+
+  @@index([expiresAt])
+
+}
+
+
+
+enum AccionAuditoria {
+
+  LOGIN
+
+  LOGOUT
+
+  CREAR_TICKET
+
+  ANULAR_TICKET
+
+  CREAR_VENDEDOR
+
+  ACTIVAR_VENDEDOR
+
+  DESACTIVAR_VENDEDOR
+
+  RESET_PASSWORD
+
+  CAMBIAR_PASSWORD
+
+  CREAR_RESULTADO
+
+  MODIFICAR_RESULTADO
+
+}
+
+
+
+enum EntidadAuditoria {
+
+  TICKET
+
+  USUARIO
+
+  RESULTADO
+
+  AUTH
+
+}
+
+
+
+/// Historial de acciones sensibles (sin secretos). Sin borrado automático.
+
+model Auditoria {
+
+  id        String            @id @default(cuid())
+
+  usuarioId String
+
+  usuario   Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  accion    AccionAuditoria
+
+  entidad   EntidadAuditoria
+
+  entidadId String
+
+  /// JSON de negocio no sensible. Nunca passwords/tokens/hashes.
+
+  detalle   String?
+
+  createdAt DateTime          @default(now())
+
+
+
+  @@index([createdAt])
+
+  @@index([usuarioId, createdAt])
+
+  @@index([accion, createdAt])
+
+  @@index([entidad, createdAt])
+
+  @@index([entidadId, createdAt])
+
+}
+
+
+
+model Ticket {
+
+  id                String       @id @default(cuid())
+
+  numeroVisible     String       @unique
+
+  codigoPublico     String       @unique
+
+  fechaJuego        DateTime     @db.Date
+
+  /// Usuario VENDEDOR que emitió el ticket. NULL en tickets históricos pre-Usuario.
+
+  vendedorId        String?
+
+  vendedor          Usuario?     @relation("TicketVendedor", fields: [vendedorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt         DateTime     @default(now())
+
+  updatedAt         DateTime     @updatedAt
+
+  totalApostado     Decimal      @db.Decimal(12, 2)
+
+  estado            EstadoTicket @default(EMITIDO)
+
+  anuladoAt         DateTime?
+
+  /// Usuario ADMIN que anuló. NULL en anulaciones históricas pre-Usuario.
+
+  anuladoPorId      String?
+
+  anuladoPor        Usuario?     @relation("TicketAnuladoPor", fields: [anuladoPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  motivoAnulacion   String?
+
+  /// Snapshot del multiplicador al emitir (p. ej. 30). Liquidación usa este valor, no el global.
+
+  multiplicadorUsado Int
+
+  /// Clave de idempotencia del cliente (UUID). NULL en tickets históricos.
+
+  idempotencyKey         String?  @unique
+
+  /// SHA-256 del payload canónico (fechaJuego + líneas). Detecta reuso con body distinto.
+
+  idempotencyRequestHash String?
+
+  lineas            TicketLinea[]
+
+
+
+  @@index([fechaJuego])
+
+  @@index([estado, fechaJuego])
+
+  @@index([vendedorId, createdAt])
+
+}
+
+
+
+model TicketLinea {
+
+  id                    String   @id @default(cuid())
+
+  ticketId              String
+
+  ticket                Ticket   @relation(fields: [ticketId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Denormalizada del ticket: misma fechaJuego; acelera exposición/liquidación.
+
+  fechaJuego            DateTime @db.Date
+
+  hora                  Int
+
+  numeroAnimal          String
+
+  animal                Animal   @relation(fields: [numeroAnimal], references: [numero], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Nombre del animal al momento de la venta (histórico del ticket).
+
+  nombreAnimalSnapshot  String
+
+  importe               Decimal  @db.Decimal(12, 2)
+
+  createdAt             DateTime @default(now())
+
+
+
+  @@unique([ticketId, hora, numeroAnimal])
+
+  @@index([fechaJuego, hora, numeroAnimal])
+
+  @@index([fechaJuego, hora])
+
+}
+

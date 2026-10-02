@@ -27,10 +27,15 @@ yarn-error.log*
 
 # local env files
 .env
-.env*.local
+.env.*
+!.env.example
 
 # vercel
 .vercel
+
+# local temp artifacts
+.tmp-*
+.tmp/
 
 # typescript
 *.tsbuildinfo

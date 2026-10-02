@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { COOKIE_ADMIN_SESSION, isAdminSession } from "@/lib/auth";
-import { HORAS_SORTEO, parseFechaYYYYMMDD } from "@/lib/fecha";
+import { requireAdmin } from "@/lib/auth/guards";
+import { jsonAuthError } from "@/lib/auth/http";
+import { recordAuditEvent } from "@/lib/audit/audit";
+import { HORAS_SORTEO, fechaAYYYYMMDD, parseFechaYYYYMMDD } from "@/lib/fecha";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const session = cookies().get(COOKIE_ADMIN_SESSION)?.value;
-  if (!isAdminSession(session)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  let admin;
+  try {
+    admin = await requireAdmin();
+  } catch (error) {
+    return jsonAuthError(error);
   }
 
   const body = (await request.json()) as {
@@ -36,13 +39,52 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Animal no encontrado" }, { status: 400 });
   }
 
-  const resultado = await prisma.resultado.upsert({
-    where: {
-      fecha_hora: { fecha, hora },
-    },
-    update: { numero },
-    create: { fecha, hora, numero },
-    include: { animal: true },
+  const fechaStr = fechaAYYYYMMDD(fecha);
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    const previo = await tx.resultado.findUnique({
+      where: { fecha_hora: { fecha, hora } },
+      select: { id: true, numero: true },
+    });
+
+    const upserted = await tx.resultado.upsert({
+      where: {
+        fecha_hora: { fecha, hora },
+      },
+      update: { numero },
+      create: { fecha, hora, numero },
+      include: { animal: true },
+    });
+
+    if (!previo) {
+      await recordAuditEvent(tx, {
+        usuarioId: admin.userId,
+        accion: "CREAR_RESULTADO",
+        entidad: "RESULTADO",
+        entidadId: upserted.id,
+        detalle: {
+          fecha: fechaStr,
+          hora,
+          numeroAnterior: null,
+          numeroNuevo: numero,
+        },
+      });
+    } else if (previo.numero !== numero) {
+      await recordAuditEvent(tx, {
+        usuarioId: admin.userId,
+        accion: "MODIFICAR_RESULTADO",
+        entidad: "RESULTADO",
+        entidadId: upserted.id,
+        detalle: {
+          fecha: fechaStr,
+          hora,
+          numeroAnterior: previo.numero,
+          numeroNuevo: numero,
+        },
+      });
+    }
+
+    return upserted;
   });
 
   return NextResponse.json({

@@ -62,6 +62,17 @@ async function main() {
   }
 
   console.log(`Seed completado: ${ANIMALES.length} animalitos.`);
+
+  await prisma.configNegocio.upsert({
+    where: { clave: "MULTIPLICADOR_PREMIO" },
+    update: { valorInt: 30 },
+    create: {
+      clave: "MULTIPLICADOR_PREMIO",
+      valorInt: 30,
+    },
+  });
+
+  console.log("ConfigNegocio: MULTIPLICADOR_PREMIO = 30");
 }
 
 main()

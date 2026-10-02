@@ -1,33 +1,40 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { setLjSessionCookie } from "@/lib/auth/cookies";
 import {
-  COOKIE_ADMIN_SESSION,
-  adminPassword,
-  adminSessionSecret,
-} from "@/lib/auth";
+  loginWithCredentials,
+  redirectPathForRole,
+} from "@/lib/auth/login";
+import { absoluteUrlFromRequest } from "@/lib/http/public-origin";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+/**
+ * POST /api/admin/login
+ * AUTH NUEVA: Usuario.usuario + password → lj_session.
+ */
 export async function POST(request: Request) {
   const formData = await request.formData();
+  const usuario = String(formData.get("usuario") ?? "");
   const password = String(formData.get("password") ?? "");
-  const secreto = adminSessionSecret();
-  const esperado = adminPassword();
 
-  if (!esperado || !secreto || password !== esperado) {
+  const result = await loginWithCredentials(prisma, { usuario, password });
+
+  if (!result) {
     return NextResponse.redirect(
-      new URL("/admin/login?error=1", request.url),
+      absoluteUrlFromRequest(request, "/login?error=1"),
       { status: 303 },
     );
   }
 
-  const response = NextResponse.redirect(new URL("/admin", request.url), {
-    status: 303,
-  });
-
-  response.cookies.set(COOKIE_ADMIN_SESSION, secreto, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-  });
-
+  const dest = redirectPathForRole(result.user.rol);
+  const response = NextResponse.redirect(
+    absoluteUrlFromRequest(request, dest),
+    {
+      status: 303,
+    },
+  );
+  setLjSessionCookie(response, result.token);
   return response;
 }

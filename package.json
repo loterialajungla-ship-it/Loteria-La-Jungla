@@ -4,22 +4,33 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:test": "tsx scripts/run-test-dev.ts",
+    "dev:test:lan": "tsx scripts/run-test-dev.ts --lan",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test": "tsx --test \"lib/tickets/*.test.ts\" \"lib/tickets/integration/safe-test-db.test.ts\" \"lib/auth/**/*.test.ts\" \"lib/users/**/*.test.ts\" \"lib/reports/**/*.test.ts\" \"lib/audit/**/*.test.ts\" \"lib/dev/**/*.test.ts\" \"lib/http/**/*.test.ts\" \"components/tickets/**/*.test.ts\" \"app/admin/**/*.test.ts\"",
+    "test:integration": "tsx scripts/run-integration-tests.ts",
+    "test:acceptance": "tsx scripts/run-acceptance-tests.ts",
+    "bootstrap:admin": "tsx scripts/bootstrap-admin.ts",
+    "seed:manual-test": "tsx scripts/seed-manual-test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
+    "bcryptjs": "^3.0.3",
+    "html-to-image": "^1.11.13",
     "next": "14.2.35",
     "prisma": "5.22.0",
+    "qrcode.react": "^4.2.0",
     "react": "^18",
     "react-dom": "^18"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

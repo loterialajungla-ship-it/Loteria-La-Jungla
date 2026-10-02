@@ -65,6 +65,10 @@ export default async function AdminPage({ searchParams }: Props) {
             <p className="mt-2 text-stone-600">
               {formatearFechaLargaDesdeDate(fecha)}
             </p>
+            <p className="mt-1 text-sm text-stone-500">
+              Por cada hora: consulta apuestas, introduce el animal ganador y
+              guarda. La liquidación de tickets se actualiza sola al consultar.
+            </p>
           </div>
 
           <form action="/api/admin/logout" method="post">
@@ -98,6 +102,48 @@ export default async function AdminPage({ searchParams }: Props) {
         <p className="mt-4 text-sm text-stone-500">
           <Link href="/" className="underline underline-offset-2 hover:text-stone-800">
             Ver página pública
+          </Link>
+          {" · "}
+          <Link
+            href="/venta"
+            className="underline underline-offset-2 hover:text-stone-800"
+          >
+            Punto de venta
+          </Link>
+          {" · "}
+          <Link
+            href="/admin/tickets"
+            className="underline underline-offset-2 hover:text-stone-800"
+          >
+            Tickets
+          </Link>
+          {" · "}
+          <Link
+            href="/admin/reportes"
+            className="underline underline-offset-2 hover:text-stone-800"
+          >
+            Reportes
+          </Link>
+          {" · "}
+          <Link
+            href="/admin/auditoria"
+            className="underline underline-offset-2 hover:text-stone-800"
+          >
+            Auditoría
+          </Link>
+          {" · "}
+          <Link
+            href="/admin/usuarios"
+            className="underline underline-offset-2 hover:text-stone-800"
+          >
+            Usuarios
+          </Link>
+          {" · "}
+          <Link
+            href="/perfil"
+            className="underline underline-offset-2 hover:text-stone-800"
+          >
+            Mi cuenta
           </Link>
         </p>
 
