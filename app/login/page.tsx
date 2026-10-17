@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import { getAuthContext } from "@/lib/auth/current-user";
 import { redirectPathForRole } from "@/lib/auth/login";
 import { Alert, Button, Card, Input, PageHeader } from "@/components/ui";
@@ -33,9 +34,14 @@ export default async function LoginPage({ searchParams }: Props) {
         aria-hidden
       />
       <main className="relative mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-10 sm:px-6">
+        <div className="mb-6 flex justify-center">
+          <BrandLogo size="hero" priority className="drop-shadow-sm" />
+        </div>
         <PageHeader
+          brand=""
           title="Iniciar sesión"
           description="Acceso para administradores y vendedores."
+          className="items-center text-center sm:flex-col sm:items-center"
         />
 
         <Card className="mt-8" padding="lg">

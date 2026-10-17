@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import { FranjasResultados } from "@/components/FranjasResultados";
 import { NavegacionFecha } from "@/components/NavegacionFecha";
 import { prisma } from "@/lib/prisma";
@@ -53,7 +54,15 @@ export default async function PaginaResultados({ searchParams }: Props) {
   return (
     <div className="min-h-screen bg-emerald-950 text-emerald-50">
       <main className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6">
-        <header>
+        <header className="text-center sm:text-left">
+          <div className="mb-4 flex justify-center sm:justify-start">
+            <BrandLogo
+              size="lg"
+              priority
+              onDark
+              className="ring-2 ring-amber-400/35"
+            />
+          </div>
           <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">
             Lotería La Jungla
           </p>

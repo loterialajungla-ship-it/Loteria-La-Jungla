@@ -67,7 +67,17 @@ export const TicketPreview = forwardRef<HTMLElement, Props>(
         }}
       >
         <div className="border-b border-emerald-700/80 pb-3 text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">
+          {/* img nativo: html-to-image captura el PNG del ticket */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/logo-transparent.png"
+            alt="Lotería La Jungla"
+            width={72}
+            height={78}
+            className="mx-auto h-[4.5rem] w-auto object-contain"
+            draggable={false}
+          />
+          <p className="mt-2 text-sm font-semibold uppercase tracking-wide text-emerald-300">
             Lotería La Jungla
           </p>
           <h2 className="mt-2 text-xl font-bold tracking-tight">TICKET</h2>
