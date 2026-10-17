@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { FranjasResultados } from "@/components/FranjasResultados";
 import { NavegacionFecha } from "@/components/NavegacionFecha";
 import { prisma } from "@/lib/prisma";
@@ -52,19 +53,27 @@ export default async function PaginaResultados({ searchParams }: Props) {
   return (
     <div className="min-h-screen bg-emerald-950 text-emerald-50">
       <main className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6">
-        <p className="text-sm font-medium uppercase tracking-wide text-emerald-300">
-          Lotería La Jungla
-        </p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">
-          {esHoy ? "Resultados de hoy" : "Resultados"}
-        </h1>
-        <p
-          className={`mt-2 text-base ${
-            esHoy ? "text-emerald-200/90" : "text-lg font-semibold text-amber-200"
-          }`}
-        >
-          {formatearFechaLargaDesdeDate(fecha)}
-        </p>
+        <header>
+          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">
+            Lotería La Jungla
+          </p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-balance sm:text-4xl">
+            {esHoy ? "Resultados de hoy" : "Resultados"}
+          </h1>
+          <p
+            className={`mt-2 text-base ${
+              esHoy
+                ? "text-emerald-200/90"
+                : "text-lg font-semibold text-amber-200"
+            }`}
+          >
+            {formatearFechaLargaDesdeDate(fecha)}
+          </p>
+          <p className="mt-1 text-xs text-emerald-400/90">
+            Hora Venezuela (America/Caracas). Los resultados se publican sorteo
+            por sorteo.
+          </p>
+        </header>
 
         <div className="mt-6">
           <NavegacionFecha
@@ -83,6 +92,15 @@ export default async function PaginaResultados({ searchParams }: Props) {
             ahora={ahora}
           />
         </div>
+
+        <footer className="mt-10 border-t border-emerald-900 pt-6 text-center text-sm text-emerald-400">
+          <Link
+            href="/login"
+            className="font-semibold text-emerald-300 underline underline-offset-2 hover:text-amber-200 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+          >
+            Acceso personal
+          </Link>
+        </footer>
       </main>
     </div>
   );

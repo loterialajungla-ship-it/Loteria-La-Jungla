@@ -21,40 +21,40 @@ export function ExposureTable({ exposicion }: Props) {
   return (
     <div className="space-y-4">
       <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <div className="rounded-xl bg-stone-50 p-3">
-          <dt className="text-stone-500">Total jugado</dt>
-          <dd className="mt-1 font-bold tabular-nums text-stone-900">
+        <div className="rounded-lj-md bg-surface-muted p-3">
+          <dt className="text-ink-muted">Total jugado</dt>
+          <dd className="mt-1 font-bold tabular-nums text-ink">
             {formatMoney(exposicion.totalApostado)}
           </dd>
         </div>
-        <div className="rounded-xl bg-stone-50 p-3">
-          <dt className="text-stone-500">Exposición total</dt>
-          <dd className="mt-1 font-bold tabular-nums text-stone-900">
+        <div className="rounded-lj-md bg-surface-muted p-3">
+          <dt className="text-ink-muted">Exposición total</dt>
+          <dd className="mt-1 font-bold tabular-nums text-ink">
             {formatMoney(exposicion.totalExposicion)}
           </dd>
         </div>
-        <div className="rounded-xl bg-amber-50 p-3">
-          <dt className="text-amber-800/80">Mayor exposición</dt>
-          <dd className="mt-1 font-bold tabular-nums text-amber-950">
+        <div className="rounded-lj-md bg-accent-50 p-3">
+          <dt className="text-accent-800">Mayor exposición</dt>
+          <dd className="mt-1 font-bold tabular-nums text-accent-800">
             {formatMoney(exposicion.mayorExposicion)}
           </dd>
         </div>
-        <div className="rounded-xl bg-stone-50 p-3">
-          <dt className="text-stone-500">Tickets afectados</dt>
-          <dd className="mt-1 font-bold tabular-nums text-stone-900">
+        <div className="rounded-lj-md bg-surface-muted p-3">
+          <dt className="text-ink-muted">Tickets afectados</dt>
+          <dd className="mt-1 font-bold tabular-nums text-ink">
             {exposicion.ticketsAfectados}
           </dd>
         </div>
       </dl>
 
-      <p className="text-xs text-stone-500">
+      <p className="text-xs text-ink-muted">
         Exposición total = suma de (importe × multiplicador del ticket). Mayor
         exposición = el animal con más riesgo si gana esa hora.
       </p>
 
-      <div className="overflow-x-auto rounded-xl border border-stone-200">
+      <div className="overflow-x-auto rounded-lj-md border border-border">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-stone-100 text-stone-600">
+          <thead className="bg-surface-muted text-ink-secondary">
             <tr>
               <th className="px-3 py-2 font-semibold">Animal</th>
               <th className="px-3 py-2 font-semibold">Jugado</th>
@@ -66,18 +66,18 @@ export function ExposureTable({ exposicion }: Props) {
             {exposicion.animales.map((animal) => (
               <tr
                 key={animal.numeroAnimal}
-                className="border-t border-stone-100 odd:bg-white even:bg-stone-50/60"
+                className="border-t border-border odd:bg-surface even:bg-surface-muted/60"
               >
-                <td className="px-3 py-2 font-medium text-stone-800">
+                <td className="px-3 py-2 font-medium text-ink">
                   {animal.numeroAnimal} - {animal.nombreAnimal}
                 </td>
-                <td className="px-3 py-2 tabular-nums">
+                <td className="px-3 py-2 tabular-nums text-ink">
                   {formatMoney(animal.totalApostado)}
                 </td>
-                <td className="px-3 py-2 tabular-nums font-semibold">
+                <td className="px-3 py-2 tabular-nums font-semibold text-ink">
                   {formatMoney(animal.exposicion)}
                 </td>
-                <td className="px-3 py-2 tabular-nums">
+                <td className="px-3 py-2 tabular-nums text-ink">
                   {animal.ticketsAfectados}
                 </td>
               </tr>

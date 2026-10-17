@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { MOTIVO_ANULACION_MAX } from "@/lib/tickets/admin-ticket-constants";
+import { Alert, Button } from "@/components/ui";
 
 type Props = {
   ticketId: string;
@@ -32,6 +33,7 @@ export function AnularTicketPanel({
   }
 
   async function confirmarAnulacion() {
+    if (enviando) return;
     const trimmed = motivo.trim();
     if (!trimmed) {
       setError("El motivo es obligatorio.");
@@ -81,13 +83,15 @@ export function AnularTicketPanel({
   if (paso === "idle") {
     return (
       <div className="mt-8">
-        <button
+        <Button
           type="button"
+          variant="danger"
+          size="lg"
+          fullWidth
           onClick={() => setPaso("confirmar")}
-          className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-base font-bold text-red-800 hover:bg-red-100"
         >
           Anular ticket
-        </button>
+        </Button>
       </div>
     );
   }
@@ -97,59 +101,63 @@ export function AnularTicketPanel({
       <div
         role="dialog"
         aria-labelledby="anular-confirm-title"
-        className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-4"
+        className="mt-8 rounded-lj-lg border border-danger-100 bg-danger-50 p-4"
       >
         <h2
           id="anular-confirm-title"
-          className="text-lg font-bold text-red-900"
+          className="text-lg font-bold text-danger-800"
         >
           ¿Seguro que quieres anular este ticket?
         </h2>
-        <dl className="mt-3 space-y-1 text-sm text-stone-800">
+        <dl className="mt-3 space-y-1 text-sm text-ink">
           <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Número</dt>
+            <dt className="text-ink-muted">Número</dt>
             <dd className="font-mono font-semibold">{numeroVisible}</dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Fecha</dt>
+            <dt className="text-ink-muted">Fecha</dt>
             <dd className="font-semibold">{fechaJuego}</dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Total jugado</dt>
+            <dt className="text-ink-muted">Total jugado</dt>
             <dd className="font-semibold tabular-nums">${totalApostado}</dd>
           </div>
         </dl>
-        <p className="mt-3 text-sm font-medium text-red-800">
+        <p className="mt-3 text-sm font-medium text-danger-800">
           Esta acción no elimina el ticket. Quedará registrado como ANULADO.
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <button
+          <Button
             type="button"
+            variant="danger"
+            size="md"
+            className="flex-1"
             onClick={() => setPaso("motivo")}
-            className="flex-1 rounded-xl bg-red-800 px-4 py-3 text-sm font-bold text-white hover:bg-red-700"
           >
             Continuar
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
+            size="md"
+            className="flex-1"
             onClick={reset}
-            className="flex-1 rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 hover:bg-stone-50"
           >
             Cancelar
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-4">
-      <h2 className="text-lg font-bold text-red-900">Motivo de anulación</h2>
-      <p className="mt-1 text-sm text-stone-600">
+    <div className="mt-8 rounded-lj-lg border border-danger-100 bg-danger-50 p-4">
+      <h2 className="text-lg font-bold text-danger-800">Motivo de anulación</h2>
+      <p className="mt-1 text-sm text-ink-muted">
         Ejemplos: Error de digitación · Cliente pidió cancelación · Ticket
         generado incorrectamente
       </p>
-      <label className="mt-3 block text-sm font-medium text-stone-700">
+      <label className="mt-3 block text-sm font-medium text-ink">
         Motivo
         <textarea
           value={motivo}
@@ -157,37 +165,43 @@ export function AnularTicketPanel({
           disabled={enviando}
           onChange={(e) => setMotivo(e.target.value)}
           rows={3}
-          className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-base outline-none focus:border-red-600 focus:ring-2 focus:ring-red-200"
+          className="mt-1 w-full rounded-lj-md border border-border-strong bg-surface px-3 py-2 text-base outline-none focus-visible:border-danger-700 focus-visible:ring-2 focus-visible:ring-danger-100"
           placeholder="Describe el motivo…"
         />
       </label>
-      <p className="mt-1 text-right text-xs text-stone-500">
+      <p className="mt-1 text-right text-xs text-ink-muted">
         {motivo.trim().length}/{MOTIVO_ANULACION_MAX}
       </p>
 
       {error ? (
-        <p role="alert" className="mt-2 text-sm font-medium text-red-800">
-          {error}
-        </p>
+        <div className="mt-2">
+          <Alert variant="error" title="Error">
+            {error}
+          </Alert>
+        </div>
       ) : null}
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <button
+        <Button
           type="button"
+          variant="danger"
+          size="md"
+          className="flex-1"
           disabled={enviando || !motivo.trim()}
           onClick={() => void confirmarAnulacion()}
-          className="flex-1 rounded-xl bg-red-800 px-4 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
         >
           {enviando ? "Anulando…" : "Confirmar anulación"}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
+          size="md"
+          className="flex-1"
           disabled={enviando}
           onClick={reset}
-          className="flex-1 rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"
         >
           Cancelar
-        </button>
+        </Button>
       </div>
     </div>
   );

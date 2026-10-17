@@ -9,6 +9,8 @@ import {
   parseFechaYYYYMMDD,
 } from "@/lib/fecha";
 import { prisma } from "@/lib/prisma";
+import { Button, Card, Input, PageHeader, StatusBadge } from "@/components/ui";
+import { cn } from "@/components/ui/cn";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,9 @@ function ordenAnimal(numero: string): number {
   return Number(numero);
 }
 
+const quickLinkClass =
+  "inline-flex min-h-10 items-center rounded-lj-md border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-ink hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2";
+
 export default async function AdminPage({ searchParams }: Props) {
   const fechaParam = searchParams.fecha;
   const fechaParseada =
@@ -35,6 +40,7 @@ export default async function AdminPage({ searchParams }: Props) {
     ? fechaParam!.trim()
     : hoyYYYYMMDD();
   const fecha = parseFechaYYYYMMDD(fechaStr)!;
+  const esHoy = fechaStr === hoyYYYYMMDD();
 
   const [animalesRaw, resultados] = await Promise.all([
     prisma.animal.findMany(),
@@ -51,118 +57,143 @@ export default async function AdminPage({ searchParams }: Props) {
 
   const porHora = new Map(resultados.map((r) => [r.hora, r]));
 
+  const totalSorteos = HORAS_SORTEO.length;
+  const publicados = HORAS_SORTEO.filter((h) => porHora.has(h)).length;
+  const pendientes = totalSorteos - publicados;
+  const primeraPendiente = HORAS_SORTEO.find((h) => !porHora.has(h));
+
   return (
-    <div className="min-h-screen bg-stone-100 text-stone-900">
-      <main className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">
-              Lotería La Jungla
-            </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">
-              Cargar resultados
-            </h1>
-            <p className="mt-2 text-stone-600">
-              {formatearFechaLargaDesdeDate(fecha)}
-            </p>
-            <p className="mt-1 text-sm text-stone-500">
-              Por cada hora: consulta apuestas, introduce el animal ganador y
-              guarda. La liquidación de tickets se actualiza sola al consultar.
-            </p>
-          </div>
-
-          <form action="/api/admin/logout" method="post">
-            <button
-              type="submit"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Cerrar sesión
-            </button>
-          </form>
-        </div>
-
-        <form method="get" className="mt-6 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-            Fecha
-            <input
-              type="date"
-              name="fecha"
-              defaultValue={fechaStr}
-              className="rounded-xl border border-stone-300 px-3 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
+    <main className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6">
+      <PageHeader
+        brand=""
+        title="Resultados"
+        meta={
+          <span className="flex flex-wrap items-center gap-2">
+            <span>{formatearFechaLargaDesdeDate(fecha)}</span>
+            <StatusBadge
+              tone={esHoy ? "info" : "neutral"}
+              label={esHoy ? "Hoy" : "Otra fecha"}
             />
-          </label>
-          <button
+          </span>
+        }
+        description="Consulta el estado de cada sorteo, publica o modifica el animal ganador y revisa la exposición. La liquidación de tickets se actualiza sola al consultar."
+      />
+
+      <nav
+        aria-label="Accesos rápidos"
+        className="mt-5 flex flex-wrap gap-2"
+      >
+        <Link href="/admin/tickets" className={quickLinkClass}>
+          Tickets
+        </Link>
+        <Link href="/admin/reportes" className={quickLinkClass}>
+          Informes
+        </Link>
+        <Link href="/admin/usuarios" className={quickLinkClass}>
+          Usuarios
+        </Link>
+        <Link href="/admin/auditoria" className={quickLinkClass}>
+          Auditoría
+        </Link>
+        <Link href="/venta" className={quickLinkClass}>
+          Venta
+        </Link>
+        {primeraPendiente != null ? (
+          <a
+            href={`#sorteo-${primeraPendiente}`}
+            className={cn(quickLinkClass, "border-accent-100 bg-accent-50 text-accent-800")}
+          >
+            Ir al primer pendiente
+          </a>
+        ) : null}
+      </nav>
+
+      <section
+        aria-label="Resumen del día"
+        className="mt-5 grid grid-cols-3 gap-2 sm:gap-3"
+      >
+        <Card padding="sm" className="text-center sm:text-left">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+            Sorteos
+          </p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
+            {totalSorteos}
+          </p>
+        </Card>
+        <Card padding="sm" className="text-center sm:text-left">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+            Publicados
+          </p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-brand-800">
+            {publicados}
+          </p>
+          <p className="mt-0.5 text-[11px] font-medium text-brand-700">
+            Con resultado
+          </p>
+        </Card>
+        <Card padding="sm" className="text-center sm:text-left">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+            Pendientes
+          </p>
+          <p
+            className={cn(
+              "mt-1 text-2xl font-bold tabular-nums",
+              pendientes > 0 ? "text-accent-800" : "text-ink",
+            )}
+          >
+            {pendientes}
+          </p>
+          <p className="mt-0.5 text-[11px] font-medium text-ink-muted">
+            Sin publicar
+          </p>
+        </Card>
+      </section>
+
+      <Card className="mt-5">
+        <form
+          method="get"
+          className="flex flex-col gap-3 sm:flex-row sm:items-end"
+        >
+          <Input
+            type="date"
+            name="fecha"
+            label="Fecha de trabajo"
+            defaultValue={fechaStr}
+            containerClassName="flex-1"
+          />
+          <Button
             type="submit"
-            className="mt-3 w-full rounded-xl bg-stone-800 px-4 py-3 text-base font-semibold text-white hover:bg-stone-700"
+            variant="secondary"
+            size="md"
+            className="sm:min-w-[8.5rem]"
           >
             Ver fecha
-          </button>
+          </Button>
         </form>
+      </Card>
 
-        <p className="mt-4 text-sm text-stone-500">
-          <Link href="/" className="underline underline-offset-2 hover:text-stone-800">
-            Ver página pública
-          </Link>
-          {" · "}
-          <Link
-            href="/venta"
-            className="underline underline-offset-2 hover:text-stone-800"
-          >
-            Punto de venta
-          </Link>
-          {" · "}
-          <Link
-            href="/admin/tickets"
-            className="underline underline-offset-2 hover:text-stone-800"
-          >
-            Tickets
-          </Link>
-          {" · "}
-          <Link
-            href="/admin/reportes"
-            className="underline underline-offset-2 hover:text-stone-800"
-          >
-            Reportes
-          </Link>
-          {" · "}
-          <Link
-            href="/admin/auditoria"
-            className="underline underline-offset-2 hover:text-stone-800"
-          >
-            Auditoría
-          </Link>
-          {" · "}
-          <Link
-            href="/admin/usuarios"
-            className="underline underline-offset-2 hover:text-stone-800"
-          >
-            Usuarios
-          </Link>
-          {" · "}
-          <Link
-            href="/perfil"
-            className="underline underline-offset-2 hover:text-stone-800"
-          >
-            Mi cuenta
-          </Link>
+      <div className="mt-6 flex items-baseline justify-between gap-3">
+        <h2 className="text-lg font-bold text-ink">Sorteos del día</h2>
+        <p className="text-xs font-medium text-ink-muted">
+          {publicados}/{totalSorteos} publicados
         </p>
+      </div>
 
-        <ol className="mt-6 flex flex-col gap-3">
-          {HORAS_SORTEO.map((hora) => {
-            const actual = porHora.get(hora);
-            return (
-              <AdminFilaResultado
-                key={hora}
-                fecha={fechaStr}
-                hora={hora}
-                horaLabel={formatearHoraSorteo(hora)}
-                animales={animales}
-                numeroInicial={actual?.numero ?? ""}
-              />
-            );
-          })}
-        </ol>
-      </main>
-    </div>
+      <ol className="mt-3 flex flex-col gap-2.5">
+        {HORAS_SORTEO.map((hora) => {
+          const actual = porHora.get(hora);
+          return (
+            <AdminFilaResultado
+              key={hora}
+              fecha={fechaStr}
+              hora={hora}
+              horaLabel={formatearHoraSorteo(hora)}
+              animales={animales}
+              numeroInicial={actual?.numero ?? ""}
+            />
+          );
+        })}
+      </ol>
+    </main>
   );
 }

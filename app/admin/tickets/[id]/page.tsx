@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { getAdminTicketById } from "@/lib/tickets/get-admin-ticket";
 import { TicketNotFoundError } from "@/lib/tickets/errors";
 import type { EstadoLineaPublico } from "@/lib/tickets/ticket-liquidation";
+import { lineaEstadoBadge, ticketDerivadoBadge, ticketPersistidoBadge } from "@/lib/ui/status-labels";
+import { Alert, Card, PageHeader, StatusBadge } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -72,151 +74,142 @@ export default async function AdminTicketDetallePage({ params }: Props) {
   const horas = Array.from(porHora.keys()).sort((a, b) => a - b);
   const anulado = ticket.estado === "ANULADO";
 
-  return (
-    <div className="min-h-screen bg-stone-100 text-stone-900">
-      <main className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6">
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <Link
-            href="/admin/tickets"
-            className="font-semibold text-emerald-800 underline underline-offset-2"
-          >
-            ← Tickets
-          </Link>
-          <Link
-            href={`/ticket/${ticket.codigoPublico}`}
-            className="font-semibold text-stone-600 underline underline-offset-2"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Ver público
-          </Link>
-        </div>
+  const persistido = ticketPersistidoBadge(ticket.estado);
+  const derivado = ticketDerivadoBadge(ticket.estadoDerivado);
 
-        <header className="mt-6">
-          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">
-            Detalle administrativo
-          </p>
-          <h1 className="mt-1 font-mono text-2xl font-bold tracking-tight">
-            {ticket.numeroVisible}
-          </h1>
-        </header>
+  return (
+    <main className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6">
+        <PageHeader
+          brand="Detalle administrativo"
+          title={ticket.numeroVisible}
+          className="[&_h1]:font-mono [&_h1]:text-2xl"
+          meta={
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge tone={persistido.tone} label={persistido.label} />
+              <StatusBadge tone={derivado.tone} label={derivado.label} />
+            </div>
+          }
+          actions={
+            <>
+              <Link
+                href="/admin/tickets"
+                className="font-semibold text-brand-800 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+              >
+                ← Tickets
+              </Link>
+              <Link
+                href={`/ticket/${ticket.codigoPublico}`}
+                className="font-semibold text-ink-muted underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver público
+              </Link>
+            </>
+          }
+        />
 
         {anulado ? (
-          <div
-            role="status"
-            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3"
-          >
-            <p className="text-base font-bold text-red-900">TICKET ANULADO</p>
+          <Alert variant="error" title="Ticket anulado" className="mt-4">
             {ticket.anuladoAt ? (
-              <p className="mt-1 text-sm text-red-800">
-                Anulado: {formatearDateTimeVe(ticket.anuladoAt)}
-              </p>
+              <p>Anulado: {formatearDateTimeVe(ticket.anuladoAt)}</p>
             ) : null}
             {ticket.motivoAnulacion ? (
-              <p className="mt-1 text-sm text-red-800">
-                Motivo:{" "}
-                <span className="whitespace-pre-wrap break-words">
-                  {ticket.motivoAnulacion}
-                </span>
+              <p className="mt-1 whitespace-pre-wrap break-words">
+                Motivo: {ticket.motivoAnulacion}
               </p>
             ) : null}
-            <p className="mt-2 text-xs text-red-700/80">
-              anuladoPorId: {ticket.anuladoPorId ?? "null"} (pendiente Usuario)
-            </p>
-          </div>
+          </Alert>
         ) : null}
 
-        <dl className="mt-6 space-y-2 rounded-2xl border border-stone-200 bg-white p-4 text-sm shadow-sm">
-          <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Fecha de juego</dt>
-            <dd className="font-semibold">
-              {formatearFechaUi(ticket.fechaJuego)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Creación</dt>
-            <dd className="font-semibold">
-              {formatearDateTimeVe(ticket.createdAt)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Total jugado</dt>
-            <dd className="font-semibold tabular-nums">
-              ${ticket.totalApostado}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Estado persistido</dt>
-            <dd className="font-semibold">{ticket.estado}</dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Estado derivado</dt>
-            <dd className="font-semibold">{ticket.estadoDerivado}</dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">Multiplicador utilizado</dt>
-            <dd className="font-semibold">{ticket.multiplicadorUsado}×</dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-stone-600">
-              {ticket.liquidacionCompleta
-                ? "Premio total"
-                : "Premio acumulado"}
-            </dt>
-            <dd className="font-semibold tabular-nums text-emerald-900">
-              ${ticket.premioTotal}
-              {!ticket.liquidacionCompleta && !anulado ? (
-                <span className="ml-1 text-xs font-normal text-amber-700">
-                  (incompleto)
-                </span>
-              ) : null}
-            </dd>
-          </div>
-        </dl>
+        <Card className="mt-6" padding="md">
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">Fecha de juego</dt>
+              <dd className="font-semibold text-ink">
+                {formatearFechaUi(ticket.fechaJuego)}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">Creación</dt>
+              <dd className="font-semibold text-ink">
+                {formatearDateTimeVe(ticket.createdAt)}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">Total jugado</dt>
+              <dd className="font-semibold tabular-nums text-ink">
+                ${ticket.totalApostado}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">Multiplicador utilizado</dt>
+              <dd className="font-semibold text-ink">
+                {ticket.multiplicadorUsado}×
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">
+                {ticket.liquidacionCompleta
+                  ? "Premio total"
+                  : "Premio acumulado"}
+              </dt>
+              <dd className="font-semibold tabular-nums text-brand-900">
+                ${ticket.premioTotal}
+                {!ticket.liquidacionCompleta && !anulado ? (
+                  <span className="ml-1 text-xs font-normal text-accent-800">
+                    (incompleto)
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+          </dl>
+        </Card>
 
         <div className="mt-6 space-y-4">
           {horas.map((hora) => (
-            <section
-              key={hora}
-              className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
-            >
-              <h2 className="text-base font-bold text-emerald-900">
+            <Card key={hora} padding="md">
+              <h2 className="text-base font-bold text-brand-900">
                 {etiquetaHora(hora)}
               </h2>
-              <ul className="mt-3 divide-y divide-stone-100">
-                {(porHora.get(hora) ?? []).map((linea) => (
+              <ul className="mt-3 divide-y divide-border">
+                {(porHora.get(hora) ?? []).map((linea) => {
+                  const lineaBadge = lineaEstadoBadge(linea.estado);
+                  return (
                   <li key={linea.id} className="py-3">
-                    <p className="font-semibold text-stone-900">
+                    <p className="font-semibold text-ink">
                       {linea.numeroAnimal} — {linea.nombreAnimal}
                     </p>
-                    <p className="mt-1 text-sm text-stone-600">
+                    <p className="mt-1 text-sm text-ink-secondary">
                       Apostado:{" "}
-                      <span className="tabular-nums font-semibold text-stone-800">
+                      <span className="font-semibold tabular-nums text-ink">
                         ${linea.importe}
                       </span>
                     </p>
-                    <p className="mt-0.5 text-sm text-stone-600">
-                      Estado:{" "}
-                      <span className="font-semibold text-stone-900">
-                        {labelLinea(linea.estado)}
-                      </span>
-                    </p>
-                    <p className="mt-0.5 text-sm text-stone-600">
+                    <div className="mt-1">
+                      <StatusBadge
+                        tone={lineaBadge.tone}
+                        label={lineaBadge.label}
+                      />
+                      <span className="sr-only">{labelLinea(linea.estado)}</span>
+                    </div>
+                    <p className="mt-1 text-sm text-ink-secondary">
                       Premio interno:{" "}
-                      <span className="tabular-nums font-semibold text-stone-900">
+                      <span className="font-semibold tabular-nums text-ink">
                         {premioLabel(linea.estado, linea.premio)}
                       </span>
                     </p>
                     {linea.resultadoNumero ? (
-                      <p className="mt-0.5 text-xs text-stone-500">
+                      <p className="mt-0.5 text-xs text-ink-muted">
                         Resultado sorteo: {linea.resultadoNumero} —{" "}
                         {linea.resultadoNombre}
                       </p>
                     ) : null}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
-            </section>
+            </Card>
           ))}
         </div>
 
@@ -228,7 +221,6 @@ export default async function AdminTicketDetallePage({ params }: Props) {
             totalApostado={ticket.totalApostado}
           />
         ) : null}
-      </main>
-    </div>
+    </main>
   );
 }

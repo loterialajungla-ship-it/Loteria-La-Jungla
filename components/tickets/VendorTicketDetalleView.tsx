@@ -8,32 +8,11 @@ import type { TicketPreviewData } from "@/components/tickets/TicketPreview";
 import { etiquetaHora, formatearFechaUi } from "@/components/tickets/pos-state";
 import type { EstadoLineaPublico } from "@/lib/tickets/ticket-liquidation";
 import type { VendorTicketDetalle } from "@/lib/tickets/vendor-tickets";
-
-function labelEstadoDerivado(estado: string): string {
-  switch (estado) {
-    case "ANULADO":
-      return "ANULADO";
-    case "PENDIENTE":
-      return "PENDIENTE";
-    case "GANADOR":
-      return "GANADOR";
-    case "NO_GANADOR":
-      return "NO GANADOR";
-    default:
-      return estado;
-  }
-}
-
-function labelLinea(estado: EstadoLineaPublico): string {
-  switch (estado) {
-    case "PENDIENTE":
-      return "PENDIENTE";
-    case "GANADORA":
-      return "GANADORA";
-    case "NO_GANADORA":
-      return "NO GANADORA";
-  }
-}
+import {
+  lineaEstadoBadge,
+  ticketDerivadoBadge,
+} from "@/lib/ui/status-labels";
+import { Alert, Card, StatusBadge } from "@/components/ui";
 
 function premioUi(estado: EstadoLineaPublico, premio: string | null): string {
   if (estado === "PENDIENTE") return "Pendiente";
@@ -69,79 +48,80 @@ export function VendorTicketDetalleView({ ticket }: Props) {
   }
   const horas = Array.from(porHora.keys()).sort((a, b) => a - b);
   const anulado = ticket.estadoDerivado === "ANULADO";
+  const derivado = ticketDerivadoBadge(ticket.estadoDerivado);
 
   return (
     <div className="mx-auto w-full max-w-lg px-4 py-8">
-      <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">
-        Lotería La Jungla
-      </p>
-      <h1 className="mt-1 font-mono text-2xl font-bold tracking-tight text-stone-900">
+      <h1 className="font-mono text-2xl font-bold tracking-tight text-ink">
         {ticket.numeroVisible}
       </h1>
-      <p className="mt-1 text-stone-600">
+      <p className="mt-1 text-ink-secondary">
         Fecha: {formatearFechaUi(ticket.fechaJuego)}
       </p>
-      <p className="mt-2 text-base font-bold text-stone-900">
-        Estado: {labelEstadoDerivado(ticket.estadoDerivado)}
-      </p>
+      <div className="mt-2">
+        <StatusBadge tone={derivado.tone} label={derivado.label} />
+      </div>
 
       {anulado ? (
-        <p
-          role="status"
-          className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-800"
-        >
-          TICKET ANULADO
-        </p>
+        <Alert variant="error" title="Ticket anulado" className="mt-3">
+          Este ticket no participa en liquidación.
+        </Alert>
       ) : null}
 
       <div className="mt-6 space-y-4">
         {horas.map((hora) => (
-          <section
-            key={hora}
-            className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
-          >
-            <h2 className="text-base font-bold text-emerald-900">
+          <Card key={hora} padding="md">
+            <h2 className="text-base font-bold text-brand-900">
               {etiquetaHora(hora)}
             </h2>
-            <ul className="mt-3 divide-y divide-stone-100">
-              {(porHora.get(hora) ?? []).map((linea) => (
-                <li key={linea.id} className="py-3">
-                  <p className="font-semibold text-stone-900">
-                    {linea.numeroAnimal} — {linea.nombreAnimal}
-                  </p>
-                  <p className="mt-1 text-sm text-stone-600">
-                    ${linea.importe} · {labelLinea(linea.estado)}
-                  </p>
-                  <p className="mt-0.5 text-sm text-stone-600">
-                    Premio:{" "}
-                    <span className="font-semibold tabular-nums text-stone-900">
-                      {premioUi(linea.estado, linea.premio)}
-                    </span>
-                  </p>
-                </li>
-              ))}
+            <ul className="mt-3 divide-y divide-border">
+              {(porHora.get(hora) ?? []).map((linea) => {
+                const lineaBadge = lineaEstadoBadge(linea.estado);
+                return (
+                  <li key={linea.id} className="py-3">
+                    <p className="font-semibold text-ink">
+                      {linea.numeroAnimal} — {linea.nombreAnimal}
+                    </p>
+                    <p className="mt-1 text-sm text-ink-secondary">
+                      ${linea.importe}
+                    </p>
+                    <div className="mt-1">
+                      <StatusBadge
+                        tone={lineaBadge.tone}
+                        label={lineaBadge.label}
+                      />
+                    </div>
+                    <p className="mt-1 text-sm text-ink-secondary">
+                      Premio:{" "}
+                      <span className="font-semibold tabular-nums text-ink">
+                        {premioUi(linea.estado, linea.premio)}
+                      </span>
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
-          </section>
+          </Card>
         ))}
       </div>
 
-      <p className="mt-4 text-base font-semibold text-stone-800">
+      <p className="mt-4 text-base font-semibold text-ink">
         Total jugado:{" "}
-        <span className="tabular-nums text-emerald-900">
+        <span className="tabular-nums text-brand-900">
           ${ticket.totalApostado}
         </span>
       </p>
       {!anulado ? (
-        <p className="mt-1 text-sm text-stone-600">
+        <p className="mt-1 text-sm text-ink-secondary">
           {ticket.liquidacionCompleta ? "Premio total" : "Premio acumulado"}:{" "}
-          <span className="font-semibold tabular-nums">
+          <span className="font-semibold tabular-nums text-ink">
             ${ticket.premioTotal}
           </span>
         </p>
       ) : null}
 
       <div className="mt-8">
-        <p className="mb-3 text-sm font-semibold text-stone-700">
+        <p className="mb-3 text-sm font-semibold text-ink-secondary">
           Ticket para compartir
         </p>
         <TicketPreview ref={ticketRef} ticket={preview} />
@@ -154,13 +134,13 @@ export function VendorTicketDetalleView({ ticket }: Props) {
       <div className="mt-6 flex flex-col gap-2">
         <Link
           href="/venta/tickets"
-          className="rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-base font-semibold text-stone-800 hover:bg-stone-50"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-lj-md border border-border-strong bg-surface px-4 py-3 text-base font-semibold text-ink hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
         >
           Volver a mis tickets
         </Link>
         <Link
           href="/venta"
-          className="rounded-xl bg-emerald-800 px-4 py-3 text-center text-base font-bold text-white hover:bg-emerald-700"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-lj-md bg-brand-800 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
         >
           Nuevo ticket
         </Link>

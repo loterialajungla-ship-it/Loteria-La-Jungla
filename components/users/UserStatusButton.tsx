@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Button } from "@/components/ui";
 
 type Props = {
   userId: string;
@@ -16,6 +17,7 @@ export function UserStatusButton({ userId, nombre, activo }: Props) {
   const [msg, setMsg] = useState<string | null>(null);
 
   async function activar() {
+    if (busy) return;
     setBusy(true);
     setError(null);
     setMsg(null);
@@ -40,6 +42,7 @@ export function UserStatusButton({ userId, nombre, activo }: Props) {
   }
 
   async function desactivar() {
+    if (busy) return;
     const ok = window.confirm(
       `¿Desactivar a ${nombre}?\n\nEl vendedor ya no podrá iniciar sesión ni crear nuevos tickets.\nEl histórico de sus tickets permanecerá intacto.`,
     );
@@ -71,29 +74,35 @@ export function UserStatusButton({ userId, nombre, activo }: Props) {
   return (
     <div className="flex flex-col items-end gap-1">
       {activo ? (
-        <button
+        <Button
           type="button"
+          variant="danger"
+          size="sm"
           disabled={busy}
           onClick={() => void desactivar()}
-          className="text-sm font-semibold text-red-700 underline underline-offset-2 disabled:opacity-50"
         >
-          Desactivar
-        </button>
+          {busy ? "Procesando…" : "Desactivar"}
+        </Button>
       ) : (
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           disabled={busy}
           onClick={() => void activar()}
-          className="text-sm font-semibold text-emerald-800 underline underline-offset-2 disabled:opacity-50"
         >
-          Activar
-        </button>
+          {busy ? "Procesando…" : "Activar"}
+        </Button>
       )}
       {error ? (
-        <span className="text-xs font-medium text-red-700">{error}</span>
+        <span role="alert" className="text-xs font-medium text-danger-700">
+          {error}
+        </span>
       ) : null}
       {msg ? (
-        <span className="text-xs font-medium text-emerald-800">{msg}</span>
+        <span role="status" className="text-xs font-medium text-brand-800">
+          {msg}
+        </span>
       ) : null}
     </div>
   );

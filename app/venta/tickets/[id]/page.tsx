@@ -48,9 +48,5 @@ export default async function VentaTicketDetallePage({ params }: Props) {
     throw e;
   }
 
-  return (
-    <div className="min-h-screen bg-stone-100 text-stone-900">
-      <VendorTicketDetalleView ticket={ticket} />
-    </div>
-  );
+  return <VendorTicketDetalleView ticket={ticket} />;
 }

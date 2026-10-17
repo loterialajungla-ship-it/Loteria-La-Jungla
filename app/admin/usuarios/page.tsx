@@ -1,11 +1,27 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { CreateVendorForm } from "@/components/users/CreateVendorForm";
 import { ResetVendorPasswordButton } from "@/components/users/ResetVendorPasswordButton";
 import { UserStatusButton } from "@/components/users/UserStatusButton";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { prisma } from "@/lib/prisma";
 import { listAdminUsers } from "@/lib/users/admin-users";
+import { buildQuery } from "@/lib/ui/build-query";
+import { usuarioActivoBadge } from "@/lib/ui/status-labels";
+import {
+  Button,
+  Card,
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  DataTableTd,
+  DataTableTh,
+  EmptyState,
+  PageHeader,
+  PaginationBar,
+  Select,
+  StatusBadge,
+} from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -35,15 +51,6 @@ function formatearFechaVe(iso: string | null): string {
   }
 }
 
-function buildQuery(params: Record<string, string | undefined>): string {
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v) sp.set(k, v);
-  }
-  const q = sp.toString();
-  return q ? `?${q}` : "";
-}
-
 export default async function AdminUsuariosPage({ searchParams }: Props) {
   const activo =
     typeof searchParams.activo === "string" ? searchParams.activo.trim() : "";
@@ -67,142 +74,142 @@ export default async function AdminUsuariosPage({ searchParams }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-stone-100 text-stone-900">
-      <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">
-              Lotería La Jungla
-            </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">Usuarios</h1>
-            <p className="mt-2 text-stone-600">
-              Gestiona vendedores. Los administradores se muestran solo de forma
-              informativa.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/perfil"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Mi cuenta
-            </Link>
-            <Link
-              href="/admin/reportes"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Reportes
-            </Link>
-            <Link
-              href="/admin/auditoria"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Auditoría
-            </Link>
-            <Link
-              href="/admin"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Resultados
-            </Link>
-          </div>
-        </div>
+    <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
+      <PageHeader
+        brand=""
+        title="Usuarios"
+        description="Gestiona vendedores. Los administradores se muestran solo de forma informativa."
+      />
 
-        <div className="mt-6">
-          <CreateVendorForm />
-        </div>
+      <div className="mt-6">
+        <CreateVendorForm />
+      </div>
 
-        <form
-          method="get"
-          className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
-        >
-          <label className="flex flex-col gap-1 text-sm font-medium text-stone-700">
-            Estado
-            <select
-              name="activo"
-              defaultValue={activo}
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-base outline-none focus:border-emerald-600"
-            >
-              <option value="">Todos</option>
-              <option value="activos">Activos</option>
-              <option value="inactivos">Inactivos</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-stone-700">
-            Rol
-            <select
-              name="rol"
-              defaultValue={rol}
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-base outline-none focus:border-emerald-600"
-            >
-              <option value="">Todos</option>
-              <option value="VENDEDOR">Vendedor</option>
-              <option value="ADMIN">Admin</option>
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-stone-700"
+      <Card className="mt-6">
+        <form method="get" className="flex flex-wrap items-end gap-3">
+          <Select
+            name="activo"
+            label="Estado"
+            defaultValue={activo}
+            containerClassName="min-w-[9rem]"
           >
+            <option value="">Todos</option>
+            <option value="activos">Activos</option>
+            <option value="inactivos">Inactivos</option>
+          </Select>
+          <Select
+            name="rol"
+            label="Rol"
+            defaultValue={rol}
+            containerClassName="min-w-[9rem]"
+          >
+            <option value="">Todos</option>
+            <option value="VENDEDOR">Vendedor</option>
+            <option value="ADMIN">Admin</option>
+          </Select>
+          <Button type="submit" variant="secondary" size="md">
             Filtrar
-          </button>
+          </Button>
         </form>
+      </Card>
 
-        <div className="mt-6 overflow-x-auto rounded-2xl border border-stone-200 bg-white shadow-sm">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-stone-200 bg-stone-50 text-stone-600">
-              <tr>
-                <th className="px-3 py-3 font-semibold">Nombre</th>
-                <th className="px-3 py-3 font-semibold">Usuario</th>
-                <th className="px-3 py-3 font-semibold">Rol</th>
-                <th className="px-3 py-3 font-semibold">Estado</th>
-                <th className="px-3 py-3 font-semibold">Último acceso</th>
-                <th className="px-3 py-3 font-semibold">Creación</th>
-                <th className="px-3 py-3 font-semibold">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {result.items.length === 0 ? (
+      {result.items.length === 0 ? (
+        <EmptyState
+          className="mt-6"
+          title="No hay usuarios con estos filtros"
+          description="Ajusta el estado o el rol, o crea un vendedor nuevo."
+        />
+      ) : (
+        <>
+          <ul className="mt-6 flex flex-col gap-3 lg:hidden">
+            {result.items.map((u) => {
+              const badge = usuarioActivoBadge(u.activo);
+              const esAdmin = u.rol === "ADMIN";
+              const esYo = current?.id === u.id;
+              const puedeGestionar = !esAdmin && !esYo;
+              return (
+                <li key={u.id}>
+                  <Card padding="sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-ink">{u.nombre}</p>
+                        <p className="font-mono text-xs text-ink-muted">
+                          {u.usuario}
+                        </p>
+                      </div>
+                      <StatusBadge tone={badge.tone} label={badge.label} />
+                    </div>
+                    <p className="mt-2 text-sm text-ink-secondary">
+                      Rol: <strong className="text-ink">{u.rol}</strong>
+                    </p>
+                    <p className="mt-1 text-xs text-ink-muted">
+                      Último acceso: {formatearFechaVe(u.lastLoginAt)}
+                    </p>
+                    {puedeGestionar ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <UserStatusButton
+                          userId={u.id}
+                          nombre={u.nombre}
+                          activo={u.activo}
+                        />
+                        <ResetVendorPasswordButton
+                          userId={u.id}
+                          nombre={u.nombre}
+                          usuario={u.usuario}
+                        />
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-ink-muted">
+                        Sin acciones de gestión
+                      </p>
+                    )}
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="mt-6 hidden lg:block">
+            <DataTable
+              caption="Listado de usuarios"
+              minWidthClassName="min-w-[720px]"
+            >
+              <DataTableHead>
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-8 text-center text-stone-500"
-                  >
-                    No hay usuarios con estos filtros.
-                  </td>
+                  <DataTableTh>Nombre</DataTableTh>
+                  <DataTableTh>Usuario</DataTableTh>
+                  <DataTableTh>Rol</DataTableTh>
+                  <DataTableTh>Estado</DataTableTh>
+                  <DataTableTh>Último acceso</DataTableTh>
+                  <DataTableTh>Creación</DataTableTh>
+                  <DataTableTh>Acción</DataTableTh>
                 </tr>
-              ) : (
-                result.items.map((u) => {
+              </DataTableHead>
+              <DataTableBody>
+                {result.items.map((u) => {
+                  const badge = usuarioActivoBadge(u.activo);
                   const esAdmin = u.rol === "ADMIN";
                   const esYo = current?.id === u.id;
                   const puedeGestionar = !esAdmin && !esYo;
                   return (
-                    <tr key={u.id} className="hover:bg-stone-50/80">
-                      <td className="px-3 py-3 font-medium text-stone-900">
+                    <DataTableRow key={u.id}>
+                      <DataTableTd className="font-medium text-ink">
                         {u.nombre}
-                      </td>
-                      <td className="px-3 py-3 font-mono text-xs sm:text-sm">
+                      </DataTableTd>
+                      <DataTableTd className="font-mono text-xs sm:text-sm">
                         {u.usuario}
-                      </td>
-                      <td className="px-3 py-3">{u.rol}</td>
-                      <td className="px-3 py-3">
-                        <span
-                          className={
-                            u.activo
-                              ? "font-semibold text-emerald-800"
-                              : "font-semibold text-stone-500"
-                          }
-                        >
-                          {u.activo ? "ACTIVO" : "INACTIVO"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 tabular-nums text-stone-600">
+                      </DataTableTd>
+                      <DataTableTd>{u.rol}</DataTableTd>
+                      <DataTableTd>
+                        <StatusBadge tone={badge.tone} label={badge.label} />
+                      </DataTableTd>
+                      <DataTableTd className="tabular-nums text-ink-secondary">
                         {formatearFechaVe(u.lastLoginAt)}
-                      </td>
-                      <td className="px-3 py-3 tabular-nums text-stone-600">
+                      </DataTableTd>
+                      <DataTableTd className="tabular-nums text-ink-secondary">
                         {formatearFechaVe(u.createdAt)}
-                      </td>
-                      <td className="px-3 py-3 text-right">
+                      </DataTableTd>
+                      <DataTableTd className="text-right">
                         {puedeGestionar ? (
                           <div className="flex flex-col items-end gap-2">
                             <UserStatusButton
@@ -217,55 +224,40 @@ export default async function AdminUsuariosPage({ searchParams }: Props) {
                             />
                           </div>
                         ) : (
-                          <span className="text-xs text-stone-400">—</span>
+                          <span className="text-xs text-ink-muted">—</span>
                         )}
-                      </td>
-                    </tr>
+                      </DataTableTd>
+                    </DataTableRow>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </DataTableBody>
+            </DataTable>
+          </div>
+        </>
+      )}
 
-        <div className="mt-4 flex items-center justify-between gap-3 text-sm">
-          {result.page > 1 ? (
-            <Link
-              href={`/admin/usuarios${buildQuery({
+      <PaginationBar
+        page={result.page}
+        totalPages={result.totalPages}
+        total={result.total}
+        itemLabel="usuarios"
+        prevHref={
+          result.page > 1
+            ? `/admin/usuarios${buildQuery({
                 ...baseParams,
                 page: String(result.page - 1),
-              })}`}
-              className="rounded-lg border border-stone-300 bg-white px-3 py-2 font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Anterior
-            </Link>
-          ) : (
-            <span className="rounded-lg border border-stone-200 bg-stone-100 px-3 py-2 font-semibold text-stone-400">
-              Anterior
-            </span>
-          )}
-          <p className="text-stone-600">
-            Página {result.totalPages === 0 ? 0 : result.page} de{" "}
-            {result.totalPages}
-            <span className="text-stone-400"> · {result.total} usuarios</span>
-          </p>
-          {result.page < result.totalPages ? (
-            <Link
-              href={`/admin/usuarios${buildQuery({
+              })}`
+            : null
+        }
+        nextHref={
+          result.page < result.totalPages
+            ? `/admin/usuarios${buildQuery({
                 ...baseParams,
                 page: String(result.page + 1),
-              })}`}
-              className="rounded-lg border border-stone-300 bg-white px-3 py-2 font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Siguiente
-            </Link>
-          ) : (
-            <span className="rounded-lg border border-stone-200 bg-stone-100 px-3 py-2 font-semibold text-stone-400">
-              Siguiente
-            </span>
-          )}
-        </div>
-      </main>
-    </div>
+              })}`
+            : null
+        }
+      />
+    </main>
   );
 }

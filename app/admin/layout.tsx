@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { AppShell } from "@/components/nav";
 import { getAuthContext } from "@/lib/auth/current-user";
 
 /**
@@ -18,7 +19,11 @@ export default async function AdminLayout({
   }
 
   if (user?.rol === "ADMIN") {
-    return <>{children}</>;
+    return (
+      <AppShell user={user} variant="admin">
+        {children}
+      </AppShell>
+    );
   }
 
   redirect("/login");

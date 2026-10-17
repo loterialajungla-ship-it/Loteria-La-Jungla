@@ -1,18 +1,23 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { HourBetSection } from "@/components/tickets/HourBetSection";
-import type { AnimalOpcion } from "@/components/tickets/HourBetSection";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimalGrid } from "@/components/tickets/AnimalGrid";
+import type { AnimalOpcion } from "@/components/tickets/animal-types";
+import { PosHourTabs } from "@/components/tickets/PosHourTabs";
 import { TicketImageActions } from "@/components/tickets/TicketImageActions";
 import { TicketPreview } from "@/components/tickets/TicketPreview";
 import type { TicketPreviewData } from "@/components/tickets/TicketPreview";
-import { TicketSummary } from "@/components/tickets/TicketSummary";
+import {
+  TicketSummary,
+  TicketSummaryHint,
+} from "@/components/tickets/TicketSummary";
+import { Alert, Button, PageHeader } from "@/components/ui";
 import {
   apuestasALineasApi,
-  etiquetaHora,
+  eliminarLinea,
   formatearFechaUi,
   puedeCrearTicket,
-  toggleHora,
+  upsertLinea,
 } from "@/components/tickets/pos-state";
 import type { PosApuestas } from "@/components/tickets/pos-state";
 import { sanitizeTicketForClientImage } from "@/components/tickets/ticket-image";
@@ -45,17 +50,10 @@ function quitarHorasCerradas(
   return siguiente;
 }
 
-function etiquetaEstadoHora(h: HoraDisponibilidadUi): string {
-  if (h.abierta) return "ABIERTA";
-  if (h.motivoCierre === "RESULTADO_PUBLICADO") return "CERRADO · Resultado";
-  return "CERRADO";
-}
-
 function nuevaIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-  // Fallback raro (navegadores antiguos): no ideal, pero evita romper UX.
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
@@ -63,8 +61,17 @@ function nuevaIdempotencyKey(): string {
   });
 }
 
+function primeraHoraAbierta(
+  horas: HoraDisponibilidadUi[],
+): number | null {
+  return horas.find((h) => h.abierta)?.hora ?? null;
+}
+
 export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
   const [horas, setHoras] = useState<HoraDisponibilidadUi[]>(horasIniciales);
+  const [horaActiva, setHoraActiva] = useState<number | null>(() =>
+    primeraHoraAbierta(horasIniciales),
+  );
   const [actualizandoHoras, setActualizandoHoras] = useState(false);
   const [apuestas, setApuestas] = useState<PosApuestas>({});
   const [creando, setCreando] = useState(false);
@@ -75,15 +82,33 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
   /** Misma key mientras la operación pendiente/reintento; nueva venta = nueva key. */
   const idempotencyKeyRef = useRef<string | null>(null);
 
-  const horasSeleccionadas = useMemo(
-    () =>
-      Object.keys(apuestas)
-        .map(Number)
-        .sort((a, b) => a - b),
-    [apuestas],
-  );
+  const conteos = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [hora, porHora] of Object.entries(apuestas)) {
+      out[hora] = Object.keys(porHora).length;
+    }
+    return out;
+  }, [apuestas]);
 
-  const actualizarHoras = useCallback(async (): Promise<HoraDisponibilidadUi[] | null> => {
+  const seleccionActiva = useMemo(() => {
+    if (horaActiva == null) return {};
+    return apuestas[String(horaActiva)] ?? {};
+  }, [apuestas, horaActiva]);
+
+  useEffect(() => {
+    if (horaActiva == null) {
+      setHoraActiva(primeraHoraAbierta(horas));
+      return;
+    }
+    const info = horas.find((h) => h.hora === horaActiva);
+    if (!info?.abierta) {
+      setHoraActiva(primeraHoraAbierta(horas));
+    }
+  }, [horas, horaActiva]);
+
+  const actualizarHoras = useCallback(async (): Promise<
+    HoraDisponibilidadUi[] | null
+  > => {
     setActualizandoHoras(true);
     try {
       const res = await fetch("/api/venta/horas-disponibles", {
@@ -140,7 +165,6 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
         return;
       }
       if (res.status === 409) {
-        // Conflicto de idempotencia / payload: nueva operación en el próximo intento.
         idempotencyKeyRef.current = null;
         setError(
           data.error?.message ??
@@ -167,13 +191,11 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
         return;
       }
 
-      // 201 crear o 200 replay: éxito. Siguiente venta = nueva key.
       idempotencyKeyRef.current = null;
       setTicket(sanitizeTicketForClientImage(data.ticket));
       setModo("exito");
       setApuestas({});
     } catch {
-      // Error de red/timeout: conservar la misma idempotencyKey para reintento.
       setError(
         "No se pudo crear el ticket. Puedes reintentar: no se duplicará la venta.",
       );
@@ -191,16 +213,32 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
     void actualizarHoras();
   }
 
-  function onToggleHora(hora: number) {
+  function onSelectHora(hora: number) {
     const info = horas.find((h) => h.hora === hora);
     if (!info?.abierta) return;
-    setApuestas((prev) => toggleHora(prev, hora));
+    setHoraActiva(hora);
+  }
+
+  function onToggleAnimal(numero: string) {
+    if (horaActiva == null) return;
+    setApuestas((prev) => {
+      const porHora = prev[String(horaActiva)] ?? {};
+      if (numero in porHora) {
+        return eliminarLinea(prev, horaActiva, numero);
+      }
+      return upsertLinea(prev, horaActiva, numero, "");
+    });
+  }
+
+  function onImporteAnimal(numero: string, importe: string) {
+    if (horaActiva == null) return;
+    setApuestas((prev) => upsertLinea(prev, horaActiva, numero, importe));
   }
 
   if (modo === "exito" && ticket) {
     return (
       <div className="mx-auto max-w-lg px-4 py-8">
-        <p className="text-center text-sm font-semibold uppercase tracking-wide text-emerald-800">
+        <p className="text-center text-sm font-semibold uppercase tracking-wide text-brand-800">
           Ticket generado
         </p>
         <div className="mt-4">
@@ -210,139 +248,100 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
           targetRef={ticketRef}
           numeroVisible={ticket.numeroVisible}
         />
-        <button
+        <Button
           type="button"
+          variant="primary"
+          size="lg"
+          fullWidth
+          className="mt-4"
           onClick={nuevoTicket}
-          className="mt-4 w-full rounded-xl bg-emerald-800 px-4 py-4 text-base font-bold text-white hover:bg-emerald-700"
         >
           Nuevo ticket
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-0px)] flex-col pb-4">
-      <header className="mx-auto w-full max-w-lg px-4 pt-8">
-        <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">
-          Lotería La Jungla
-        </p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-stone-900">
-          Punto de venta
-        </h1>
-        <p className="mt-2 text-base text-stone-600">
-          Fecha de juego:{" "}
-          <strong className="text-stone-900">
-            {formatearFechaUi(fechaJuego)}
-          </strong>
-        </p>
-        <p className="mt-1 text-xs text-stone-500">
-          Solo se vende para hoy (hora Venezuela). Las horas cerradas no son
-          seleccionables; el servidor valida de nuevo al crear.
-        </p>
-      </header>
+    <div className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-8">
+      <div className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0">
+          <PageHeader
+            brand=""
+            title="Punto de venta"
+            meta={
+              <>
+                Fecha de juego:{" "}
+                <strong className="text-ink">
+                  {formatearFechaUi(fechaJuego)}
+                </strong>
+              </>
+            }
+            description="Solo se vende para hoy (hora Venezuela). Las horas cerradas no son seleccionables; el servidor valida de nuevo al crear."
+          />
 
-      <div className="mx-auto mt-6 w-full max-w-lg flex-1 px-4">
-        <div className="flex items-end justify-between gap-3">
-          <p className="text-sm font-semibold text-stone-700">
-            Horas del sorteo
-          </p>
-          <button
-            type="button"
-            disabled={creando || actualizandoHoras}
-            onClick={() => void actualizarHoras()}
-            className="text-sm font-semibold text-emerald-800 underline underline-offset-2 disabled:opacity-50"
-          >
-            {actualizandoHoras ? "Actualizando…" : "Actualizar horas"}
-          </button>
-        </div>
-
-        <fieldset disabled={creando} className="mt-2">
-          <legend className="sr-only">Seleccionar horas abiertas</legend>
-          <div className="flex flex-wrap gap-2">
-            {horas.map((h) => {
-              const activa = String(h.hora) in apuestas;
-              const cerrada = !h.abierta;
-              return (
-                <button
-                  key={h.hora}
-                  type="button"
-                  aria-pressed={activa}
-                  aria-disabled={cerrada}
-                  disabled={cerrada}
-                  title={
-                    cerrada
-                      ? h.motivoCierre === "RESULTADO_PUBLICADO"
-                        ? "Cerrado — resultado publicado"
-                        : "Cerrado — el sorteo ya comenzó"
-                      : undefined
-                  }
-                  onClick={() => onToggleHora(h.hora)}
-                  className={`rounded-full px-4 py-2.5 text-sm font-bold tabular-nums ${
-                    cerrada
-                      ? "cursor-not-allowed border border-stone-200 bg-stone-100 text-stone-400"
-                      : activa
-                        ? "bg-emerald-800 text-white"
-                        : "border border-stone-300 bg-white text-stone-800 hover:border-emerald-600"
-                  }`}
-                >
-                  <span
-                    className={`block leading-tight ${cerrada ? "line-through" : ""}`}
-                  >
-                    {etiquetaHora(h.hora)}
-                  </span>
-                  <span
-                    className={`block text-[10px] font-semibold uppercase tracking-wide ${
-                      cerrada
-                        ? "text-stone-400"
-                        : activa
-                          ? "text-emerald-100"
-                          : "text-emerald-700"
-                    }`}
-                  >
-                    {etiquetaEstadoHora(h)}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="mt-6">
+            <PosHourTabs
+              horas={horas}
+              horaActiva={horaActiva}
+              conteos={conteos}
+              disabled={creando}
+              actualizando={actualizandoHoras}
+              onSelectHora={onSelectHora}
+              onActualizar={() => void actualizarHoras()}
+              panelId="pos-animal-panel"
+            />
           </div>
-        </fieldset>
 
-        <div className="mt-6 flex flex-col gap-4">
-          {horasSeleccionadas.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-stone-300 bg-white/60 px-4 py-6 text-center text-stone-500">
-              Selecciona una o varias horas abiertas para comenzar.
-            </p>
+          <div
+            id="pos-animal-panel"
+            role="tabpanel"
+            aria-labelledby={
+              horaActiva != null ? `pos-hora-tab-${horaActiva}` : undefined
+            }
+            className="mt-6"
+          >
+            {horaActiva == null ? (
+              <p className="rounded-lj-lg border border-dashed border-border bg-surface px-4 py-8 text-center text-ink-muted">
+                No hay horas abiertas para vender ahora. Actualiza las horas o
+                vuelve más tarde.
+              </p>
+            ) : (
+              <fieldset disabled={creando} className="min-w-0">
+                <legend className="sr-only">
+                  Animales para la hora activa
+                </legend>
+                <AnimalGrid
+                  animales={animales}
+                  seleccion={seleccionActiva}
+                  disabled={creando}
+                  onToggle={onToggleAnimal}
+                  onImporteChange={onImporteAnimal}
+                />
+              </fieldset>
+            )}
+          </div>
+
+          {error ? (
+            <div className="mt-4">
+              <Alert variant="error" title="No se pudo crear el ticket">
+                {error}
+              </Alert>
+            </div>
           ) : (
-            horasSeleccionadas.map((hora) => (
-              <HourBetSection
-                key={hora}
-                hora={hora}
-                animales={animales}
-                apuestas={apuestas}
-                apuestasHora={apuestas[String(hora)] ?? {}}
-                onChange={setApuestas}
-                disabled={creando}
-              />
-            ))
+            <div className="mt-4">
+              <TicketSummaryHint apuestas={apuestas} />
+            </div>
           )}
         </div>
 
-        {error ? (
-          <p
-            role="alert"
-            className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
-          >
-            {error}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="mt-8">
         <TicketSummary
+          fechaJuego={fechaJuego}
           apuestas={apuestas}
+          animales={animales}
           creando={creando}
-          onCrear={crearTicket}
+          onChange={setApuestas}
+          onCrear={() => void crearTicket()}
         />
       </div>
     </div>

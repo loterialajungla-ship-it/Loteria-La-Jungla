@@ -12,6 +12,7 @@ import {
   ticketExportSizeFromElement,
   ticketPngFileName,
 } from "@/components/tickets/ticket-image";
+import { Alert, Button } from "@/components/ui";
 
 type Props = {
   targetRef: RefObject<HTMLElement | null>;
@@ -180,41 +181,45 @@ export function TicketImageActions({ targetRef, numeroVisible }: Props) {
   return (
     <div className="mt-4 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row">
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="lg"
           disabled={busy}
           onClick={onDescargar}
-          className="flex-1 rounded-xl border border-emerald-700 bg-white px-4 py-3 text-base font-bold text-emerald-900 hover:bg-emerald-50 disabled:opacity-50"
+          className="flex-1"
         >
           {busy ? "Generando imagen…" : "Descargar imagen"}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="primary"
+          size="lg"
           disabled={busy}
           onClick={onCompartir}
-          className="flex-1 rounded-xl bg-amber-400 px-4 py-3 text-base font-bold text-emerald-950 hover:bg-amber-300 disabled:opacity-50"
+          className="flex-1 bg-accent-100 text-brand-950 hover:bg-accent-50 focus-visible:ring-accent-700"
         >
           {busy
             ? "Generando imagen…"
             : shareDisponible
               ? "Compartir"
               : "Compartir (descarga)"}
-        </button>
+        </Button>
       </div>
       {!shareDisponible ? (
-        <p className="text-center text-xs text-stone-500">
+        <p className="text-center text-xs text-ink-muted">
           Este navegador no comparte archivos: se descargará el PNG para
           adjuntarlo en WhatsApp.
         </p>
       ) : (
-        <p className="text-center text-xs text-stone-500">
+        <p className="text-center text-xs text-ink-muted">
           En el móvil, usa Compartir para enviarlo por WhatsApp u otras apps.
         </p>
       )}
       {error ? (
-        <p role="alert" className="text-center text-sm font-medium text-red-700">
+        <Alert variant="error" title="Error al generar imagen">
           {error}
-        </p>
+        </Alert>
       ) : null}
     </div>
   );

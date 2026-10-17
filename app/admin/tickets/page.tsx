@@ -4,6 +4,27 @@ import { listAdminTickets } from "@/lib/tickets/list-admin-tickets";
 import { prisma } from "@/lib/prisma";
 import { hoyYYYYMMDD } from "@/lib/fecha";
 import { formatearFechaUi } from "@/components/tickets/pos-state";
+import { buildQuery } from "@/lib/ui/build-query";
+import {
+  ticketDerivadoBadge,
+  ticketPersistidoBadge,
+} from "@/lib/ui/status-labels";
+import {
+  Button,
+  Card,
+  DataTable,
+  DataTableBody,
+  DataTableHead,
+  DataTableRow,
+  DataTableTd,
+  DataTableTh,
+  EmptyState,
+  Input,
+  PageHeader,
+  PaginationBar,
+  Select,
+  StatusBadge,
+} from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -35,34 +56,6 @@ function formatearHoraCreacion(iso: string): string {
   }
 }
 
-function labelEstadoPersistido(estado: string): string {
-  return estado === "ANULADO" ? "Anulado" : "Emitido";
-}
-
-function labelEstadoDerivado(estado: string): string {
-  switch (estado) {
-    case "ANULADO":
-      return "ANULADO";
-    case "PENDIENTE":
-      return "PENDIENTE";
-    case "GANADOR":
-      return "GANADOR";
-    case "NO_GANADOR":
-      return "NO GANADOR";
-    default:
-      return estado;
-  }
-}
-
-function buildQuery(params: Record<string, string | undefined>): string {
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v) sp.set(k, v);
-  }
-  const q = sp.toString();
-  return q ? `?${q}` : "";
-}
-
 export default async function AdminTicketsPage({ searchParams }: Props) {
   const fechaDefault = hoyYYYYMMDD();
   const fecha =
@@ -90,193 +83,190 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-stone-100 text-stone-900">
-      <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">
-              Lotería La Jungla
-            </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">Tickets</h1>
-            <p className="mt-2 text-stone-600">
-              Consulta, filtra y anula tickets emitidos.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/admin/reportes"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Reportes
-            </Link>
-            <Link
-              href="/admin/auditoria"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Auditoría
-            </Link>
-            <Link
-              href="/admin"
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Resultados
-            </Link>
-          </div>
-        </div>
+    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
+      <PageHeader
+        brand=""
+        title="Tickets"
+        description="Consulta, filtra y anula tickets emitidos."
+      />
 
-        <form
-          method="get"
-          className="mt-6 grid gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:grid-cols-2"
-        >
-          <label className="flex flex-col gap-1 text-sm font-medium text-stone-700">
-            Fecha
-            <input
-              type="date"
-              name="fecha"
-              defaultValue={fecha}
-              className="rounded-xl border border-stone-300 px-3 py-2.5 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm font-medium text-stone-700">
-            Estado
-            <select
-              name="estado"
-              defaultValue={estado}
-              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
-            >
-              <option value="">Todos</option>
-              <option value="EMITIDO">Emitidos</option>
-              <option value="ANULADO">Anulados</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm font-medium text-stone-700 sm:col-span-2">
-            Número de ticket
-            <input
-              type="search"
-              name="numero"
-              defaultValue={numero}
-              placeholder="LJ-20261001-000001"
-              className="rounded-xl border border-stone-300 px-3 py-2.5 font-mono text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
-            />
-          </label>
-
-          <button
-            type="submit"
-            className="rounded-xl bg-emerald-800 px-4 py-3 text-base font-semibold text-white hover:bg-emerald-700 sm:col-span-2"
-          >
+      <Card className="mt-6">
+        <form method="get" className="grid gap-3 sm:grid-cols-2">
+          <Input
+            type="date"
+            name="fecha"
+            label="Fecha"
+            defaultValue={fecha}
+          />
+          <Select name="estado" label="Estado" defaultValue={estado}>
+            <option value="">Todos</option>
+            <option value="EMITIDO">Emitidos</option>
+            <option value="ANULADO">Anulados</option>
+          </Select>
+          <Input
+            type="search"
+            name="numero"
+            label="Número de ticket"
+            defaultValue={numero}
+            placeholder="LJ-20261001-000001"
+            containerClassName="sm:col-span-2"
+            className="font-mono"
+          />
+          <Button type="submit" variant="primary" size="md" className="sm:col-span-2">
             Buscar
-          </button>
+          </Button>
         </form>
+      </Card>
 
-        <div className="mt-6 overflow-x-auto rounded-2xl border border-stone-200 bg-white shadow-sm">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b border-stone-200 bg-stone-50 text-stone-600">
-              <tr>
-                <th className="px-3 py-3 font-semibold">Número</th>
-                <th className="px-3 py-3 font-semibold">Fecha</th>
-                <th className="px-3 py-3 font-semibold">Creación</th>
-                <th className="px-3 py-3 font-semibold">Total</th>
-                <th className="px-3 py-3 font-semibold">Estado</th>
-                <th className="px-3 py-3 font-semibold">Resultado</th>
-                <th className="px-3 py-3 font-semibold">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {result.items.length === 0 ? (
+      {result.items.length === 0 ? (
+        <EmptyState
+          className="mt-6"
+          title="No hay tickets con estos filtros"
+          description="Prueba otra fecha, estado o número de ticket."
+        />
+      ) : (
+        <>
+          {/* Móvil: cards */}
+          <ul className="mt-6 flex flex-col gap-3 md:hidden">
+            {result.items.map((t) => {
+              const persistido = ticketPersistidoBadge(t.estado);
+              const derivado = ticketDerivadoBadge(t.estadoDerivado);
+              return (
+                <li key={t.id}>
+                  <Card padding="sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-mono text-sm font-bold text-ink">
+                        {t.numeroVisible}
+                      </p>
+                      <StatusBadge
+                        tone={persistido.tone}
+                        label={persistido.label}
+                      />
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                      <div>
+                        <dt className="text-ink-muted">Fecha</dt>
+                        <dd className="font-medium tabular-nums text-ink">
+                          {formatearFechaUi(t.fechaJuego)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-muted">Total</dt>
+                        <dd className="font-semibold tabular-nums text-ink">
+                          ${t.totalApostado}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-muted">Creación</dt>
+                        <dd className="tabular-nums text-ink-secondary">
+                          {formatearHoraCreacion(t.createdAt)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-muted">Resultado</dt>
+                        <dd className="mt-0.5">
+                          <StatusBadge
+                            tone={derivado.tone}
+                            label={derivado.label}
+                          />
+                        </dd>
+                      </div>
+                    </dl>
+                    <Link
+                      href={`/admin/tickets/${t.id}`}
+                      className="mt-3 inline-flex min-h-10 items-center text-sm font-semibold text-brand-800 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                    >
+                      Ver detalle
+                    </Link>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Escritorio: tabla */}
+          <div className="mt-6 hidden md:block">
+            <DataTable caption="Listado de tickets">
+              <DataTableHead>
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-8 text-center text-stone-500"
-                  >
-                    No hay tickets con estos filtros.
-                  </td>
+                  <DataTableTh>Número</DataTableTh>
+                  <DataTableTh>Fecha</DataTableTh>
+                  <DataTableTh>Creación</DataTableTh>
+                  <DataTableTh>Total</DataTableTh>
+                  <DataTableTh>Estado</DataTableTh>
+                  <DataTableTh>Resultado</DataTableTh>
+                  <DataTableTh>Acción</DataTableTh>
                 </tr>
-              ) : (
-                result.items.map((t) => (
-                  <tr key={t.id} className="hover:bg-stone-50/80">
-                    <td className="px-3 py-3 font-mono text-xs font-semibold text-stone-900 sm:text-sm">
-                      {t.numeroVisible}
-                    </td>
-                    <td className="px-3 py-3 tabular-nums">
-                      {formatearFechaUi(t.fechaJuego)}
-                    </td>
-                    <td className="px-3 py-3 tabular-nums text-stone-600">
-                      {formatearHoraCreacion(t.createdAt)}
-                    </td>
-                    <td className="px-3 py-3 tabular-nums font-semibold">
-                      ${t.totalApostado}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span
-                        className={
-                          t.estado === "ANULADO"
-                            ? "font-semibold text-red-700"
-                            : "text-stone-800"
-                        }
-                      >
-                        {labelEstadoPersistido(t.estado)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 font-medium text-stone-700">
-                      {labelEstadoDerivado(t.estadoDerivado)}
-                    </td>
-                    <td className="px-3 py-3">
-                      <Link
-                        href={`/admin/tickets/${t.id}`}
-                        className="font-semibold text-emerald-800 underline underline-offset-2"
-                      >
-                        Ver
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+              </DataTableHead>
+              <DataTableBody>
+                {result.items.map((t) => {
+                  const persistido = ticketPersistidoBadge(t.estado);
+                  const derivado = ticketDerivadoBadge(t.estadoDerivado);
+                  return (
+                    <DataTableRow key={t.id}>
+                      <DataTableTd className="font-mono text-xs font-semibold text-ink sm:text-sm">
+                        {t.numeroVisible}
+                      </DataTableTd>
+                      <DataTableTd className="tabular-nums">
+                        {formatearFechaUi(t.fechaJuego)}
+                      </DataTableTd>
+                      <DataTableTd className="tabular-nums text-ink-secondary">
+                        {formatearHoraCreacion(t.createdAt)}
+                      </DataTableTd>
+                      <DataTableTd className="font-semibold tabular-nums">
+                        ${t.totalApostado}
+                      </DataTableTd>
+                      <DataTableTd>
+                        <StatusBadge
+                          tone={persistido.tone}
+                          label={persistido.label}
+                        />
+                      </DataTableTd>
+                      <DataTableTd>
+                        <StatusBadge
+                          tone={derivado.tone}
+                          label={derivado.label}
+                        />
+                      </DataTableTd>
+                      <DataTableTd>
+                        <Link
+                          href={`/admin/tickets/${t.id}`}
+                          className="font-semibold text-brand-800 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                        >
+                          Ver
+                        </Link>
+                      </DataTableTd>
+                    </DataTableRow>
+                  );
+                })}
+              </DataTableBody>
+            </DataTable>
+          </div>
+        </>
+      )}
 
-        <div className="mt-4 flex items-center justify-between gap-3 text-sm">
-          {result.page > 1 ? (
-            <Link
-              href={`/admin/tickets${buildQuery({
+      <PaginationBar
+        page={result.page}
+        totalPages={result.totalPages}
+        total={result.total}
+        itemLabel="tickets"
+        prevHref={
+          result.page > 1
+            ? `/admin/tickets${buildQuery({
                 ...baseParams,
                 page: String(result.page - 1),
-              })}`}
-              className="rounded-lg border border-stone-300 bg-white px-3 py-2 font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Anterior
-            </Link>
-          ) : (
-            <span className="rounded-lg border border-stone-200 bg-stone-100 px-3 py-2 font-semibold text-stone-400">
-              Anterior
-            </span>
-          )}
-
-          <p className="text-stone-600">
-            Página {result.totalPages === 0 ? 0 : result.page} de{" "}
-            {result.totalPages}
-            <span className="text-stone-400"> · {result.total} tickets</span>
-          </p>
-
-          {result.page < result.totalPages ? (
-            <Link
-              href={`/admin/tickets${buildQuery({
+              })}`
+            : null
+        }
+        nextHref={
+          result.page < result.totalPages
+            ? `/admin/tickets${buildQuery({
                 ...baseParams,
                 page: String(result.page + 1),
-              })}`}
-              className="rounded-lg border border-stone-300 bg-white px-3 py-2 font-semibold text-stone-700 hover:bg-stone-50"
-            >
-              Siguiente
-            </Link>
-          ) : (
-            <span className="rounded-lg border border-stone-200 bg-stone-100 px-3 py-2 font-semibold text-stone-400">
-              Siguiente
-            </span>
-          )}
-        </div>
-      </main>
-    </div>
+              })}`
+            : null
+        }
+      />
+    </main>
   );
 }

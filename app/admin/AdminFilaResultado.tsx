@@ -11,6 +11,8 @@ import {
   type AnimalOpcion,
   type ResultadoActual,
 } from "@/app/admin/admin-resultados-ui";
+import { Alert, Button, Card, Select, StatusBadge } from "@/components/ui";
+import { cn } from "@/components/ui/cn";
 
 type Props = {
   fecha: string;
@@ -46,6 +48,8 @@ export function AdminFilaResultado({
   const tieneResultado = resultadoActual != null;
 
   async function guardar() {
+    if (estado === "guardando") return;
+
     if (!numero) {
       setEstado("error");
       setMensaje("Elige un animalito.");
@@ -97,89 +101,114 @@ export function AdminFilaResultado({
   }
 
   return (
-    <li className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-base font-bold text-emerald-900">{horaLabel}</p>
-          <p className="mt-1 text-sm text-stone-600">
-            <span className="font-medium text-stone-500">Resultado:</span>{" "}
+    <Card
+      as="li"
+      padding="sm"
+      id={`sorteo-${hora}`}
+      className={cn(
+        "scroll-mt-28",
+        tieneResultado
+          ? "border-brand-200"
+          : "border-accent-100 border-l-4 border-l-accent-700",
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2 px-1 pt-1">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-base font-bold tabular-nums text-brand-900">
+              {horaLabel}
+            </p>
+            <StatusBadge
+              tone={tieneResultado ? "success" : "warning"}
+              label={tieneResultado ? "Publicado" : "Pendiente"}
+            />
+          </div>
+          <p className="mt-1.5 text-sm text-ink-secondary">
+            <span className="font-medium text-ink-muted">Resultado:</span>{" "}
             {tieneResultado ? (
-              <span className="font-semibold text-stone-900">
-                {resultadoLabel}
+              <span className="font-semibold text-ink">
+                <span className="font-mono tabular-nums">
+                  {resultadoActual?.numero}
+                </span>
+                {resultadoActual?.nombre
+                  ? ` — ${resultadoActual.nombre}`
+                  : null}
               </span>
             ) : (
-              <span className="font-semibold text-amber-800">PENDIENTE</span>
+              <span className="font-semibold text-accent-800">
+                Sin publicar
+              </span>
             )}
-          </p>
-          <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-stone-500">
-            Estado: {tieneResultado ? "Publicado" : "Pendiente"}
           </p>
         </div>
         {resumenApuestas ? (
-          <p className="text-xs font-medium tabular-nums text-stone-500">
+          <p className="max-w-[12rem] text-right text-xs font-medium tabular-nums text-ink-muted">
             {resumenApuestas}
           </p>
         ) : null}
       </div>
 
-      <div className="mt-3 flex flex-col gap-3">
-        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-          {tieneResultado ? "Modificar animalito" : "Animalito"}
-          <select
-            value={numero}
-            onChange={(e) => {
-              setNumero(e.target.value);
-              setEstado("idle");
-              setMensaje("");
-            }}
-            className="rounded-xl border border-stone-300 bg-white px-3 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
-          >
-            <option value="">— Seleccionar —</option>
-            {animales.map((animal) => (
-              <option key={animal.numero} value={animal.numero}>
-                {animal.numero} - {animal.nombre}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="mt-3 flex flex-col gap-2.5 px-1 pb-1 sm:flex-row sm:items-end">
+        <Select
+          label={tieneResultado ? "Modificar animalito" : "Animalito ganador"}
+          name={`animal-${hora}`}
+          value={numero}
+          containerClassName="min-w-0 flex-1"
+          onChange={(e) => {
+            setNumero(e.target.value);
+            setEstado("idle");
+            setMensaje("");
+          }}
+        >
+          <option value="">— Seleccionar —</option>
+          {animales.map((animal) => (
+            <option key={animal.numero} value={animal.numero}>
+              {animal.numero} - {animal.nombre}
+            </option>
+          ))}
+        </Select>
 
-        <button
+        <Button
           type="button"
-          onClick={guardar}
+          variant="primary"
+          size="md"
+          onClick={() => void guardar()}
           disabled={estado === "guardando"}
-          className="rounded-xl bg-emerald-800 px-4 py-3 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+          className="sm:min-w-[11rem] sm:shrink-0"
         >
           {estado === "guardando"
             ? "Guardando…"
             : tieneResultado
-              ? "Actualizar resultado"
-              : "Guardar resultado"}
-        </button>
-
-        {mensaje ? (
-          <p
-            role={estado === "error" ? "alert" : "status"}
-            className={`text-sm font-medium ${
-              estado === "ok" ? "text-emerald-700" : "text-red-700"
-            }`}
-          >
-            {mensaje}
-          </p>
-        ) : null}
+              ? "Actualizar"
+              : "Guardar"}
+        </Button>
       </div>
 
-      <AdminExposicionPanel
-        fecha={fecha}
-        hora={hora}
-        resultadoLabel={resultadoLabel}
-        onResumen={(r) => {
-          if (!r) {
-            setResumenApuestas(null);
-            return;
-          }
-          setResumenApuestas(resumenExposicionCompacto(r));
-        }}
-      />
-    </li>
+      {mensaje ? (
+        <div className="mt-2.5 px-1">
+          <Alert
+            variant={estado === "ok" ? "success" : "error"}
+            title={estado === "ok" ? "Correcto" : "Error"}
+          >
+            {mensaje}
+          </Alert>
+        </div>
+      ) : null}
+
+      <div className="px-1 pb-1">
+        <AdminExposicionPanel
+          fecha={fecha}
+          hora={hora}
+          resultadoLabel={resultadoLabel}
+          onResumen={(r) => {
+            if (!r) {
+              setResumenApuestas(null);
+              return;
+            }
+            setResumenApuestas(resumenExposicionCompacto(r));
+          }}
+        />
+      </div>
+    </Card>
   );
 }

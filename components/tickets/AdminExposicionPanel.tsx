@@ -5,13 +5,17 @@ import { ExposureTable } from "@/components/tickets/ExposureTable";
 import type { ExposicionSorteo } from "@/lib/tickets/aggregate-exposure";
 import { etiquetaHora } from "@/components/tickets/pos-state";
 import { resumenExposicionCompacto } from "@/app/admin/admin-resultados-ui";
+import { Alert, Button } from "@/components/ui";
 
 type Props = {
   fecha: string;
   hora: number;
   resultadoLabel: string | null;
   /** Notifica al padre cuando hay datos de exposición (para el resumen compacto). */
-  onResumen?: (resumen: { ticketsAfectados: number; totalApostado: string } | null) => void;
+  onResumen?: (resumen: {
+    ticketsAfectados: number;
+    totalApostado: string;
+  } | null) => void;
 };
 
 export function AdminExposicionPanel({
@@ -86,59 +90,62 @@ export function AdminExposicionPanel({
       : null;
 
   return (
-    <div className="mt-3 border-t border-stone-100 pt-3">
+    <div className="mt-3 border-t border-border pt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
-          onClick={onToggle}
-          className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-800 hover:bg-stone-100"
+          variant="secondary"
+          size="sm"
+          onClick={() => void onToggle()}
         >
-          {abierto ? "Ocultar apuestas" : "Ver apuestas"}
-        </button>
+          {abierto ? "Ocultar exposición" : "Ver exposición"}
+        </Button>
         {resumen ? (
-          <span className="text-xs font-medium tabular-nums text-stone-600">
+          <span className="text-xs font-medium tabular-nums text-ink-muted">
             {resumen}
           </span>
         ) : null}
       </div>
 
       {abierto ? (
-        <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+        <div className="mt-3 rounded-lj-md border border-brand-100 bg-brand-50/40 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-bold text-emerald-900">
+            <p className="text-sm font-bold text-brand-900">
               {etiquetaHora(hora)} — Apuestas / exposición
             </p>
             <button
               type="button"
               disabled={cargando}
-              onClick={cargar}
-              className="text-sm font-semibold text-emerald-800 underline underline-offset-2 disabled:opacity-50"
+              onClick={() => void cargar()}
+              className="text-sm font-semibold text-brand-800 underline underline-offset-2 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 disabled:opacity-50"
             >
               {cargando ? "Actualizando…" : "Actualizar"}
             </button>
           </div>
 
-          <p className="mt-2 text-sm text-stone-700">
+          <p className="mt-2 text-sm text-ink-secondary">
             {resultadoLabel ? (
               <>
                 Resultado publicado:{" "}
-                <strong className="text-stone-900">{resultadoLabel}</strong>
+                <strong className="text-ink">{resultadoLabel}</strong>
               </>
             ) : (
-              <span className="font-medium text-amber-800">
+              <span className="font-medium text-accent-800">
                 Resultado pendiente
               </span>
             )}
           </p>
 
           {error ? (
-            <p role="alert" className="mt-2 text-sm font-medium text-red-700">
-              {error}
-            </p>
+            <div className="mt-2">
+              <Alert variant="error" title="Error">
+                {error}
+              </Alert>
+            </div>
           ) : null}
 
           {cargando && !data ? (
-            <p className="mt-3 text-sm text-stone-500">Cargando exposición…</p>
+            <p className="mt-3 text-sm text-ink-muted">Cargando exposición…</p>
           ) : null}
 
           {data ? (

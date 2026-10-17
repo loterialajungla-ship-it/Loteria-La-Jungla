@@ -3,25 +3,74 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Surfaces */
+  --background: #f5f5f4;
+  --foreground: #1c1917;
+  --surface: #ffffff;
+  --surface-muted: #fafaf9;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Text */
+  --text-primary: #1c1917;
+  --text-secondary: #57534e;
+  --text-muted: #78716c;
+  --text-inverse: #fafaf9;
+
+  /* Brand — verde jungla */
+  --brand-50: #ecfdf5;
+  --brand-100: #d1fae5;
+  --brand-200: #a7f3d0;
+  --brand-600: #059669;
+  --brand-700: #047857;
+  --brand-800: #065f46;
+  --brand-900: #064e3b;
+  --brand-950: #022c22;
+
+  /* Accent — ámbar (uso moderado) */
+  --accent-50: #fffbeb;
+  --accent-100: #fef3c7;
+  --accent-700: #b45309;
+  --accent-800: #92400e;
+
+  /* Danger */
+  --danger-50: #fef2f2;
+  --danger-100: #fee2e2;
+  --danger-700: #b91c1c;
+  --danger-800: #991b1b;
+
+  /* Success */
+  --success-50: #ecfdf5;
+  --success-700: #047857;
+
+  /* Focus / radius / shadow */
+  --focus-ring: #059669;
+  --focus-ring-offset: #ffffff;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .focus-ring-brand {
+    outline: none;
+  }
+
+  .focus-ring-brand:focus-visible {
+    box-shadow:
+      0 0 0 2px var(--focus-ring-offset),
+      0 0 0 4px var(--focus-ring);
   }
 }

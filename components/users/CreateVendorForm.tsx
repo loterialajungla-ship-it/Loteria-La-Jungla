@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Alert, Button, Card, Input } from "@/components/ui";
 
 export function CreateVendorForm() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export function CreateVendorForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (enviando) return;
     setEnviando(true);
     setError(null);
     setOk(null);
@@ -55,19 +57,16 @@ export function CreateVendorForm() {
   }
 
   return (
-    <form
-      onSubmit={(e) => void onSubmit(e)}
-      className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
-    >
-      <h2 className="text-lg font-bold text-stone-900">Crear vendedor</h2>
-      <p className="mt-1 text-sm text-stone-600">
-        Solo se crean cuentas con rol VENDEDOR.
-      </p>
+    <Card>
+      <form onSubmit={(e) => void onSubmit(e)}>
+        <h2 className="text-lg font-bold text-ink">Crear vendedor</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Solo se crean cuentas con rol VENDEDOR.
+        </p>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <label className="flex flex-col gap-1 text-sm font-medium text-stone-700">
-          Nombre
-          <input
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <Input
+            label="Nombre"
             type="text"
             required
             minLength={2}
@@ -75,12 +74,9 @@ export function CreateVendorForm() {
             value={nombre}
             disabled={enviando}
             onChange={(e) => setNombre(e.target.value)}
-            className="rounded-xl border border-stone-300 px-3 py-2.5 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-stone-700">
-          Usuario
-          <input
+          <Input
+            label="Usuario"
             type="text"
             required
             minLength={3}
@@ -89,12 +85,10 @@ export function CreateVendorForm() {
             value={usuario}
             disabled={enviando}
             onChange={(e) => setUsuario(e.target.value)}
-            className="rounded-xl border border-stone-300 px-3 py-2.5 font-mono text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
+            className="font-mono"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-stone-700">
-          Contraseña inicial
-          <input
+          <Input
+            label="Contraseña inicial"
             type="password"
             required
             minLength={8}
@@ -102,29 +96,35 @@ export function CreateVendorForm() {
             value={password}
             disabled={enviando}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded-xl border border-stone-300 px-3 py-2.5 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
           />
-        </label>
-      </div>
+        </div>
 
-      {error ? (
-        <p role="alert" className="mt-3 text-sm font-medium text-red-700">
-          {error}
-        </p>
-      ) : null}
-      {ok ? (
-        <p role="status" className="mt-3 text-sm font-medium text-emerald-800">
-          {ok}
-        </p>
-      ) : null}
+        {error ? (
+          <div className="mt-3">
+            <Alert variant="error" title="Error">
+              {error}
+            </Alert>
+          </div>
+        ) : null}
+        {ok ? (
+          <div className="mt-3">
+            <Alert variant="success" title="Correcto">
+              {ok}
+            </Alert>
+          </div>
+        ) : null}
 
-      <button
-        type="submit"
-        disabled={enviando}
-        className="mt-4 w-full rounded-xl bg-emerald-800 px-4 py-3 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
-      >
-        {enviando ? "Creando…" : "Crear vendedor"}
-      </button>
-    </form>
+        <Button
+          type="submit"
+          variant="primary"
+          size="md"
+          disabled={enviando}
+          className="mt-4 sm:w-auto"
+          fullWidth
+        >
+          {enviando ? "Creando…" : "Crear vendedor"}
+        </Button>
+      </form>
+    </Card>
   );
 }
