@@ -56,12 +56,7 @@ export default async function PaginaResultados({ searchParams }: Props) {
       <main className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6">
         <header className="text-center sm:text-left">
           <div className="mb-4 flex justify-center sm:justify-start">
-            <BrandLogo
-              size="lg"
-              priority
-              onDark
-              className="ring-2 ring-amber-400/35"
-            />
+            <BrandLogo size="lg" priority onDark />
           </div>
           <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">
             Lotería La Jungla
