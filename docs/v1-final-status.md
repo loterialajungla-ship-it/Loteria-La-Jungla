@@ -57,7 +57,7 @@ Suites:
 | Cierre histórico 2026-10-02 | **219 PASS** | PASS (TEST) | **26 PASS** (TEST) | PASS |
 | Reportado PROMPT 151 (árbol de trabajo local; **no** commit limpio ni CI independiente) | **385** aprobadas, 0 fallidas, 0 omitidas, 0 canceladas | **No ejecutado** en esa fase | **No ejecutado** en esa fase | **No revalidado** en esa fase |
 
-Smoke (histórico LAN): PNG+QR en PC y móvil; a11y formal **pendiente**. Despliegue productivo, cron en Vercel y DB de producción: **no verificados**.
+Smoke (histórico LAN): PNG+QR en PC y móvil; a11y formal **pendiente**. Despliegue productivo, automatización de resultados (scheduler externo pendiente; Hobby sin cron cada 5 min) y DB de producción: **no verificados**.
 
 ---
 
@@ -69,7 +69,7 @@ Ningún defecto funcional detectado en código vs reglas V1 **como bloqueador de
 
 - deploy con **HTTPS**;
 - `DATABASE_URL` / `DIRECT_URL` de producción (nunca `TEST_DATABASE_URL` como runtime prod);
-- `CRON_SECRET` en Production (sin él el cron es **fail-closed**; ver `docs/production-preflight.md` §20 — **no** implica cron ya operativo);
+- `CRON_SECRET` en Production si se invocará `/api/cron/resultados-automaticos` (sin él el endpoint es **fail-closed**; ver `docs/production-preflight.md` §20 — **no** implica automatización activa; Hobby: `vercel.json` con `"crons": []`);
 - primer ADMIN de producción provisionado con `npm run bootstrap:admin:production` (o ADMIN ya existente); **no** usar `npm run bootstrap:admin` contra producción (ese comando es solo **dev-from-recovery**);
 - secretos legacy `ADMIN_PASSWORD` / `ADMIN_SESSION_SECRET` no usados (runtime no los lee).
 
@@ -142,7 +142,7 @@ Orden operativo alineado con `docs/production-deployment-runbook.md` §6.1 (ning
 - [ ] HTTPS obligatorio
 - [ ] `DATABASE_URL` + `DIRECT_URL` producción (pooled + direct Neon si aplica)
 - [ ] **No** requerir `TEST_DATABASE_URL` en runtime prod
-- [ ] `CRON_SECRET` en Production (cron `/api/cron/resultados-automaticos`; sin secreto = fail-closed). Revisar también `vercel.json` (schedule) — **no** afirmar que el cron productivo ya funciona
+- [ ] `CRON_SECRET` en Production si habrá invocación autenticada del endpoint `/api/cron/resultados-automaticos` (sin secreto = fail-closed). Hobby: sin cron Vercel cada 5 min; scheduler externo **pendiente**; hasta entonces resultados por ADMIN — **no** afirmar automatización activa
 - [ ] Backup verificable **antes** de migrar (pendiente de ejecución autorizada)
 - [ ] Regeneración/build del código necesario (`prisma generate` vía build/postinstall)
 - [ ] Despliegue del código cuando corresponda
@@ -156,7 +156,7 @@ Orden operativo alineado con `docs/production-deployment-runbook.md` §6.1 (ning
 - [ ] Smoke login ADMIN/VENDEDOR; ticket, PNG+QR, consulta pública, resultado, exposición, anulación, reportes
 - [ ] Política de retención DB según operación
 
-Variables **obligatorias prod:** `DATABASE_URL`, `DIRECT_URL` (si el cliente Prisma las usa); `CRON_SECRET` para el cron.  
+Variables **obligatorias prod:** `DATABASE_URL`, `DIRECT_URL` (si el cliente Prisma las usa). `CRON_SECRET` cuando se use el endpoint de resultados automáticos con scheduler externo o probes autenticados (aún no configurado como automatización activa).
 Variables **solo bootstrap prod (temporales):** `BOOTSTRAP_TARGET=production`, `CONFIRM_PRODUCTION_BOOTSTRAP`, `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASSWORD`.  
 Variables **solo test/dev:** `TEST_DATABASE_URL`, `MANUAL_TEST_*`.  
 Comando **dev-from-recovery** (no prod): `npm run bootstrap:admin`.

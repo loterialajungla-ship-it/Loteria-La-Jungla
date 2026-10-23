@@ -47,7 +47,7 @@ Variables **mínimas en el entorno de build/runtime** de Production:
 | --- | --- |
 | `DATABASE_URL` | Prisma → conexiones pooled (Neon “pooled”) |
 | `DIRECT_URL` | Prisma `directUrl` → migraciones / conexión directa Neon |
-| `CRON_SECRET` | Auth del cron `/api/cron/resultados-automaticos` (`Authorization: Bearer …` o `x-cron-secret`). Si falta o está vacío, el código es **fail-closed** (`authorizeCronRequest` → no autoriza). **Obligatoria** para que el job programado pueda ejecutarse; no implica que el cron ya esté verificado en producción. |
+| `CRON_SECRET` | Auth del endpoint `/api/cron/resultados-automaticos` (`Authorization: Bearer …` o `x-cron-secret`). Si falta o está vacío, el código es **fail-closed** (`authorizeCronRequest` → no autoriza). Necesaria cuando se configure un **scheduler externo** o se invoque el endpoint de forma autenticada; **no** implica automatización ya activa. |
 
 ### Runtime (opcional)
 
@@ -153,15 +153,23 @@ No poner `TEST_DATABASE_URL` como dependencia del runtime de Production.
 - Install: `npm install` (dispara `postinstall` → `prisma generate`)  
 - Output: estándar Next (App Router)
 
-### Cron (`vercel.json`)
+### Cron / publicación automática (`vercel.json`)
 
-El repositorio incluye `vercel.json` con un cron Vercel:
+**Vercel Hobby** no permite crons más frecuentes que una vez al día. Por eso `vercel.json` declara `"crons": []`: el proyecto **no** registra un cron cada 5 minutos en Vercel (evita el fallo de deploy Hobby).
 
-- Ruta: `/api/cron/resultados-automaticos`  
-- Schedule: `*/5 * * * *`  
+El endpoint de publicación automática **sigue en el código**:
 
-Revisar ese archivo y la ruta del endpoint **junto con** `CRON_SECRET` en Production antes de asumir automatización.  
-**Pendiente de evidencia:** que el cron esté desplegado y funcionando en producción. Configuración en repo ≠ verificación operativa.
+- Ruta: `/api/cron/resultados-automaticos` (GET y POST)
+- Auth: `CRON_SECRET` vía `Authorization: Bearer …` o `x-cron-secret` (fail-closed si falta)
+- Comportamiento: publica resultados `AUTOMATICO` de franjas **ya vencidas** del día America/Caracas; no sobrescribe existentes; idempotente
+
+**Estado operativo actual:**
+
+- Automatización periódica en Vercel: **desactivada** (Hobby).
+- Scheduler externo autenticado: **pendiente de configurar** (aún no instalado ni activo).
+- Hasta que exista ese scheduler: la publicación de resultados debe hacerse **manualmente por ADMIN** (UI/API de resultados).
+
+No afirmar que hay automatización externa activa solo porque el endpoint exista.
 
 ### Preview
 
@@ -272,7 +280,7 @@ Justificación: Vercel construye la app con Prisma Client, pero **`migrate deplo
 
 1. **Backup** verificable de Neon/Postgres prod.  
 2. Confirmar **rama/commit** a desplegar.  
-3. Configurar variables en Vercel **Production** (`DATABASE_URL`, `DIRECT_URL`, `CRON_SECRET`, opcional `AUTH_SESSION_HOURS`). Revisar `vercel.json` (cron) — no afirmar que el cron productivo ya corre.  
+3. Configurar variables en Vercel **Production** (`DATABASE_URL`, `DIRECT_URL`, `CRON_SECRET` si se usará scheduler externo o probes autenticados, opcional `AUTH_SESSION_HOURS`). `vercel.json` no registra cron Hobby frecuente — no afirmar automatización activa.
 4. Aplicar migraciones a prod: `npx prisma migrate deploy` (con URLs de prod; desde CI/local controlado).  
 5. **Deploy** Production en Vercel (build = `prisma generate && next build`).  
 6. Crear/verificar ADMIN: `npm run bootstrap:admin:production` si no existe (nunca `bootstrap:admin` ni seeds de TEST).  
@@ -383,7 +391,7 @@ Tras comprobar login nuevo, sesiones y roles en Production:
 
 - [ ] HTTPS activo  
 - [ ] Dominio correcto  
-- [ ] `CRON_SECRET` en Production (fail-closed si falta; revisar `vercel.json` + ruta del cron — no afirmar éxito productivo sin evidencia)  
+- [ ] `CRON_SECRET` en Production si se usará invocación autenticada del endpoint (fail-closed si falta). Automatización externa: **pendiente**; hasta entonces resultados por ADMIN manual. No afirmar cron Vercel cada 5 min (Hobby: `crons: []`)
 - [ ] `/login` OK  
 - [ ] ADMIN OK  
 - [ ] VENDEDOR OK  

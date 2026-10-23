@@ -52,7 +52,7 @@ Integración/aceptación **deben** usar solo DB de prueba aislada (`TEST_DATABAS
 | --- | --- | --- |
 | `AUTH_SESSION_HOURS` | Duración cookie `lj_session` | `12` (máx. 168) |
 | `NODE_ENV` | `production` → cookie `secure` | Lo fija el host |
-| `CRON_SECRET` | Auth del cron `POST/GET` `/api/cron/resultados-automaticos` (`Authorization: Bearer …` o `x-cron-secret`) | **Obligatoria para que el cron acepte requests.** Si falta o está vacía, `authorizeCronRequest` responde **fail-closed** (`false`) — el endpoint no autoriza. Esto describe el código local; **no** implica que el cron esté activo ni verificado en producción. |
+| `CRON_SECRET` | Auth del endpoint `POST/GET` `/api/cron/resultados-automaticos` (`Authorization: Bearer …` o `x-cron-secret`) | **Obligatoria para que el endpoint acepte requests autenticados** (p. ej. futuro scheduler externo). Si falta o está vacía, `authorizeCronRequest` responde **fail-closed**. Describe el código local; **no** implica automatización activa. En Vercel Hobby el cron nativo cada 5 min **no** está registrado (`vercel.json` → `"crons": []`). |
 
 ### Solo operaciones / bootstrap (no auth runtime)
 
@@ -248,7 +248,7 @@ Ver §7. Scripts CLI pueden usar `console.log` informativo sin secretos. Runtime
 - [ ] `npx prisma migrate deploy` en prod
 - [ ] Deploy app (`build` / Vercel)
 - [ ] ADMIN creado (`bootstrap:admin:production` o existente; no `bootstrap:admin` ni seeds TEST)
-- [ ] `CRON_SECRET` configurado en Production (cron resultados)
+- [ ] `CRON_SECRET` en Production si se invocará el endpoint autenticado; hasta tener scheduler externo, resultados por ADMIN manual (Hobby: sin cron Vercel cada 5 min)
 - [ ] Variables temporales de bootstrap retiradas tras el éxito
 - [ ] VENDEDOR creado desde admin
 - [ ] Login `/login` probado
@@ -335,9 +335,11 @@ No se actualizaron versiones en este preflight.
 
 - Build: `prisma generate && next build`  
 - Postinstall: `prisma generate`  
-- El repositorio **incluye** `vercel.json` con cron Vercel: ruta `/api/cron/resultados-automaticos`, schedule `*/5 * * * *`. Revisar ese archivo junto con la ruta del endpoint y la presencia de `CRON_SECRET` en el entorno Production **antes** de asumir automatización.  
-- **No verificado en producción:** que el cron esté desplegado, programado o ejecutándose con éxito. La presencia de `vercel.json` en el repo ≠ cron productivo operativo.  
-- Sin `CRON_SECRET` (o vacío): el código rechaza la petición (**fail-closed**); no hay bypass.  
+- `vercel.json` declara `"crons": []` para **compatibilidad con Vercel Hobby** (Hobby no permite `*/5 * * * *`).
+- El endpoint `/api/cron/resultados-automaticos` **permanece** en el código (GET/POST, auth con `CRON_SECRET`).
+- Automatización periódica vía **scheduler externo**: **pendiente de configurar** (no instalada ni activa).
+- Mientras tanto: publicación de resultados **manual por ADMIN**.
+- Sin `CRON_SECRET` (o vacío): el endpoint rechaza (**fail-closed**); no hay bypass.
 - Pipeline **no** ejecuta seeds ni suites de integración/aceptación  
 
 Migraciones: aplicar manualmente / job de release con `prisma migrate deploy` **antes o en el release**, solo con autorización humana; no dejar datos de test en prod. **No** se recomienda ejecutar migraciones en esta fase documental.
@@ -357,6 +359,6 @@ Ninguna de código: no se detectó bloqueador de producción en runtime.
 
 **Unitarios:** cifra reportada PROMPT 151 = 385 PASS en árbol de trabajo local (ver §2); no sustituye verificación en commit limpio ni en CI.  
 
-**Pendiente / no demostrado aquí:** despliegue productivo, cron operativo en Vercel, migraciones aplicadas en prod, bootstrap ADMIN en prod, integración/aceptación reejecutadas, smoke UI prod.  
+**Pendiente / no demostrado aquí:** despliegue productivo, scheduler externo de resultados (o publicación solo manual), migraciones aplicadas en prod, bootstrap ADMIN en prod, integración/aceptación reejecutadas, smoke UI prod.
 
 **Criterio operativo:** completar el checklist (§13) con HTTPS, migraciones y bootstrap ADMIN **solo** bajo autorización humana explícita, sin mezclar `TEST_DATABASE_URL` en el runtime.
