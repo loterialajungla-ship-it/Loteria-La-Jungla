@@ -1,8 +1,11 @@
 /**
- * Integración REAL contra PostgreSQL (TEST_DATABASE_URL).
- * Ejecutar solo vía: npm run test:integration
+ * Integración REAL contra PostgreSQL (endpoint TEST allowlisted).
+ * Ejecutar solo vía: `npm run test:integration`.
  *
- * `npm test` no debe exigir PostgreSQL: esta suite se salta sin RUN_INTEGRATION=1.
+ * Sin `RUN_INTEGRATION=1` la suite se salta (también excluida de `npm test`).
+ * Cliente: `createIntegrationPrismaClient` tras assert de destino TEST.
+ * `createTicket` / `anularTicket` reciben ese `db` inyectado. El singleton
+ * `@/lib/prisma` también exige destino TEST si `RUN_INTEGRATION=1`.
  */
 
 import assert from "node:assert/strict";
@@ -13,6 +16,7 @@ import { anularTicket } from "@/lib/tickets/anular-ticket";
 import { AnimalNotFoundError, IdempotencyConflictError } from "@/lib/tickets/errors";
 import {
   AHORA_VE_MANANA,
+  createIntegrationPrismaClient,
   createTestUser,
   fechaJuegoDate,
   fechaJuegoTest,
@@ -20,23 +24,25 @@ import {
   resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 import { hoyYYYYMMDD } from "@/lib/fecha";
-import { prisma } from "@/lib/prisma";
 
 const ENABLED = process.env.RUN_INTEGRATION === "1";
-/** Mismo cliente que createTicket — un solo pool de conexiones. */
-const db = prisma;
 
 describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
+  let db: ReturnType<typeof createIntegrationPrismaClient>;
   let vendedorA: { id: string };
   let vendedorB: { id: string };
   let admin: { id: string };
 
   before(async () => {
+    assertIntegrationPointsAtTestDatabase();
+    db = createIntegrationPrismaClient();
     await seedMinimalBusiness(db);
   });
 
   beforeEach(async () => {
+    assertIntegrationPointsAtTestDatabase();
     await resetTicketDomain(db);
     await seedMinimalBusiness(db);
     vendedorA = await createTestUser(db, {
@@ -74,6 +80,7 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
         ],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     assert.equal(result.idempotentReplay, false);
@@ -111,6 +118,7 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
         ],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     assert.equal(result.ticket.totalApostado, "5.36");
@@ -133,7 +141,8 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
           lineas: [{ hora: 14, numeroAnimal: "03", importe: "1.00" }],
         },
         AHORA_VE_MANANA,
-      );
+      db,
+    );
       nums.push(r.ticket.numeroVisible);
     }
 
@@ -161,6 +170,7 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
             ],
           },
           AHORA_VE_MANANA,
+      db,
         ),
       ),
     );
@@ -192,8 +202,8 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
       lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
     };
 
-    const first = await createTicket(input, AHORA_VE_MANANA);
-    const second = await createTicket(input, AHORA_VE_MANANA);
+    const first = await createTicket(input, AHORA_VE_MANANA, db);
+    const second = await createTicket(input, AHORA_VE_MANANA, db);
 
     assert.equal(first.idempotentReplay, false);
     assert.equal(second.idempotentReplay, true);
@@ -215,6 +225,7 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     await assert.rejects(
@@ -227,7 +238,8 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
             lineas: [{ hora: 14, numeroAnimal: "03", importe: "20.00" }],
           },
           AHORA_VE_MANANA,
-        ),
+      db,
+    ),
       IdempotencyConflictError,
     );
 
@@ -248,6 +260,7 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     await assert.rejects(
@@ -261,7 +274,8 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
               lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
             },
             AHORA_VE_MANANA,
-          );
+      db,
+    );
         } catch (e) {
           assert.ok(e instanceof IdempotencyConflictError);
           assert.match(e.message, /no puede reutilizarse/);
@@ -286,7 +300,7 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
     };
 
     const results = await Promise.all(
-      Array.from({ length: 10 }, () => createTicket(input, AHORA_VE_MANANA)),
+      Array.from({ length: 10 }, () => createTicket(input, AHORA_VE_MANANA, db)),
     );
 
     const ids = new Set(results.map((r) => r.ticket.id));
@@ -317,7 +331,8 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
             lineas: [{ hora: 14, numeroAnimal: "99", importe: "1.00" }],
           },
           AHORA_VE_MANANA,
-        ),
+      db,
+    ),
       AnimalNotFoundError,
     );
 
@@ -339,6 +354,7 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "1.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     const anulado = await anularTicket(db, {

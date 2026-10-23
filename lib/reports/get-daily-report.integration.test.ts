@@ -1,12 +1,12 @@
 /**
  * Integration: reporte diario ADMIN.
- * Solo vía npm run test:integration (RUN_INTEGRATION=1).
+ * Solo vía `npm run test:integration` (`RUN_INTEGRATION=1`).
+ * Cliente: `createIntegrationPrismaClient` tras assert de destino TEST.
  */
 
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { createTicket } from "@/lib/tickets/create-ticket";
 import { anularTicket } from "@/lib/tickets/anular-ticket";
 import { getDailyReport } from "@/lib/reports/get-daily-report";
@@ -15,25 +15,30 @@ import { HORAS_SORTEO, hoyYYYYMMDD } from "@/lib/fecha";
 import { InvalidGameDateError } from "@/lib/tickets/errors";
 import {
   AHORA_VE_MANANA,
+  createIntegrationPrismaClient,
   createTestUser,
   newIdempotencyKey,
   resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 
 const ENABLED = process.env.RUN_INTEGRATION === "1";
-const db = prisma;
 
 describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () => {
+  let db: ReturnType<typeof createIntegrationPrismaClient>;
   let vendedorA: { id: string };
   let vendedorB: { id: string };
   let admin: { id: string };
 
   before(async () => {
+    assertIntegrationPointsAtTestDatabase();
+    db = createIntegrationPrismaClient();
     await seedMinimalBusiness(db);
   });
 
   beforeEach(async () => {
+    assertIntegrationPointsAtTestDatabase();
     await resetTicketDomain(db);
     await seedMinimalBusiness(db);
     vendedorA = await createTestUser(db, {
@@ -78,6 +83,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
         ],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     await createTicket(
@@ -88,6 +94,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "7.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     // Histórico sin vendedor
@@ -122,6 +129,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "05", importe: "100.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     await anularTicket(db, {
       id: toAnular.ticket.id,
@@ -209,6 +217,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     // Sin resultado → pendiente

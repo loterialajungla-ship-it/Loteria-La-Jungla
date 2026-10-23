@@ -1,6 +1,19 @@
+/**
+ * Harness de integración/aceptación.
+ *
+ * - Crear clientes solo con `createIntegrationPrismaClient` (valida destino TEST
+ *   vía `assertIntegrationWriteTarget` antes de `new PrismaClient`).
+ * - `resetTicketDomain` / `seedMinimalBusiness` / `createTestUser` exigen la
+ *   marca de fábrica + entorno aún alineado con TEST.
+ * - No usar `@/lib/prisma` en estas rutas de escritura del harness.
+ */
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "@/lib/auth/password";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
+import {
+  NEON_ENDPOINTS,
+  assertIntegrationWriteTarget,
+} from "@/lib/db/neon-endpoint-guard";
 
 /** 2026-10-02 12:00 UTC ≈ 08:00 America/Caracas → horas 9–19 abiertas. */
 export const AHORA_VE_MANANA = new Date(Date.UTC(2026, 9, 2, 12, 0, 0));
@@ -22,11 +35,76 @@ const ANIMALES_MIN = [
 ] as const;
 
 /**
+ * Marca de fábrica: Prisma no expone la URL efectiva de un cliente ya creado
+ * vía API pública estable (5.22). Solo clientes creados por
+ * `createIntegrationPrismaClient` llevan esta marca.
+ */
+export const INTEGRATION_PRISMA_BRAND = Symbol.for(
+  "llj.integrationPrismaClient",
+);
+
+export type IntegrationPrismaClient = PrismaClient & {
+  readonly [INTEGRATION_PRISMA_BRAND]: typeof NEON_ENDPOINTS.TEST;
+};
+
+/**
+ * Crea un PrismaClient de integración tras validar el entorno.
+ * El URL inyectado es el DATABASE_URL ya autorizado (TEST).
+ */
+export function createIntegrationPrismaClient(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): IntegrationPrismaClient {
+  assertIntegrationWriteTarget(env);
+  const url = env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "createIntegrationPrismaClient: falta DATABASE_URL tras validación.",
+    );
+  }
+
+  const client = new PrismaClient({
+    datasources: { db: { url } },
+  });
+
+  Object.defineProperty(client, INTEGRATION_PRISMA_BRAND, {
+    value: NEON_ENDPOINTS.TEST,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+
+  return client as IntegrationPrismaClient;
+}
+
+/**
+ * Exige un cliente creado por la fábrica + entorno aún alineado con TEST.
+ * Rechaza clientes genéricos (p. ej. `@/lib/prisma` o overrides opacos).
+ */
+export function assertIntegrationPrismaClient(
+  db: PrismaClient,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): asserts db is IntegrationPrismaClient {
+  const brand = (db as IntegrationPrismaClient)[INTEGRATION_PRISMA_BRAND];
+  if (brand !== NEON_ENDPOINTS.TEST) {
+    throw new Error(
+      "Operación de integración abortada: el PrismaClient no está verificado. Usa createIntegrationPrismaClient() (no se puede confiar en un cliente con destino opaco).",
+    );
+  }
+
+  const target = assertIntegrationWriteTarget(env);
+  if (target.databaseEndpointId !== brand) {
+    throw new Error(
+      `Operación de integración abortada: discrepancia entre cliente verificado (${brand}) y entorno (${target.databaseEndpointId}).`,
+    );
+  }
+}
+
+/**
  * Limpia datos mutables de tickets/usuarios. Conserva Animal y ConfigNegocio.
- * Usa DELETE (no TRUNCATE) para evitar deadlocks AccessExclusiveLock con
- * transacciones concurrentes aún abiertas en el pool.
  */
 export async function resetTicketDomain(db: PrismaClient): Promise<void> {
+  assertIntegrationPrismaClient(db);
+
   const maxAttempts = 6;
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -50,6 +128,8 @@ export async function resetTicketDomain(db: PrismaClient): Promise<void> {
 }
 
 export async function seedMinimalBusiness(db: PrismaClient): Promise<void> {
+  assertIntegrationPrismaClient(db);
+
   for (const a of ANIMALES_MIN) {
     await db.animal.upsert({
       where: { numero: a.numero },
@@ -78,6 +158,8 @@ export async function createTestUser(
     password?: string;
   },
 ): Promise<{ id: string; usuario: string; rol: "ADMIN" | "VENDEDOR" }> {
+  assertIntegrationPrismaClient(db);
+
   const passwordHash = await hashPassword(args.password ?? "testpass12");
   const row = await db.usuario.create({
     data: {

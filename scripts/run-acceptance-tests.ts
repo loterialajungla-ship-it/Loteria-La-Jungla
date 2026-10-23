@@ -1,6 +1,13 @@
 /**
- * Runner: npm run test:acceptance
- * Requiere TEST_DATABASE_URL aislada. Si falta → SKIPPED (exit 0).
+ * Runner oficial: `npm run test:acceptance`
+ *
+ * - Requiere `TEST_DATABASE_URL` = endpoint TEST allowlisted (mismo guard que
+ *   integración vía `runDbTestSuite` / `assertSafeTestDatabase`).
+ * - Si **falta** `TEST_DATABASE_URL` → SKIPPED (exit 0); no conecta a otra DB.
+ * - Si la URL existe pero es inválida / no allowlisted / colisiona con prod →
+ *   exit 1 (no skip).
+ * - Suites: `*.acceptance.test.ts` (excluidas de `npm test`).
+ * - No registra URLs, passwords ni tokens.
  */
 
 import fs from "node:fs";

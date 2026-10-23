@@ -1,3 +1,4 @@
+import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   HORAS_SORTEO,
@@ -18,11 +19,15 @@ export type { ExposicionSorteo };
 /**
  * Exposición / riesgo de un sorteo (fecha + hora).
  * Solo tickets EMITIDO. Usa multiplicadorUsado de cada ticket.
+ *
+ * `db` opcional para suites (cliente de fábrica); default `@/lib/prisma`.
  */
 export async function getExposureForDraw(args: {
   fechaJuego: string;
   hora: number;
+  db?: PrismaClient;
 }): Promise<ExposicionSorteo> {
+  const db = args.db ?? prisma;
   const fecha = parseFechaYYYYMMDD(args.fechaJuego);
   if (!fecha) {
     throw new InvalidGameDateError("Fecha de juego inválida.");
@@ -36,10 +41,10 @@ export async function getExposureForDraw(args: {
   }
 
   const [animales, lineas] = await Promise.all([
-    prisma.animal.findMany({
+    db.animal.findMany({
       select: { numero: true, nombre: true },
     }),
-    prisma.ticketLinea.findMany({
+    db.ticketLinea.findMany({
       where: {
         fechaJuego: fecha,
         hora: args.hora,

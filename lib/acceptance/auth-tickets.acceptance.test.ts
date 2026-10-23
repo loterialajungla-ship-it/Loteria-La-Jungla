@@ -1,12 +1,17 @@
 /**
  * Acceptance / smoke — auth nueva + tickets + liquidación + exposición.
- * Ejecutar: npm run test:acceptance (requiere TEST_DATABASE_URL).
+ *
+ * Ejecutar solo: `npm run test:acceptance` (runner → `runDbTestSuite`).
+ * - Sin `TEST_DATABASE_URL`: el runner hace SKIPPED (exit 0); esta suite
+ *   además se salta si `RUN_ACCEPTANCE !== "1"`.
+ * - Cliente: `createIntegrationPrismaClient` tras
+ *   `assertIntegrationPointsAtTestDatabase` (nunca `@/lib/prisma` a ciegas).
+ * - Excluida de `npm test` por sufijo `.acceptance.test.ts`.
  */
 
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { loginWithCredentials } from "@/lib/auth/login";
 import {
@@ -51,11 +56,14 @@ import {
 import { hoyYYYYMMDD } from "@/lib/fecha";
 import {
   AHORA_VE_MANANA,
+  assertIntegrationPrismaClient,
+  createIntegrationPrismaClient,
   fechaJuegoDate,
   newIdempotencyKey,
   resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 import {
   authorizeAdminUi,
   authorizePerfilUi,
@@ -70,7 +78,6 @@ import {
 } from "@/lib/acceptance/authorize-rules";
 
 const ENABLED = process.env.RUN_ACCEPTANCE === "1";
-const db = prisma;
 
 /** Contraseña de bootstrap — nunca se imprime. */
 function adminPasswordForTest(): string {
@@ -85,6 +92,7 @@ function adminPasswordForTest(): string {
 const VENDOR_PASS = "vendor-test-12";
 
 async function bootstrapAdmin() {
+  assertIntegrationPrismaClient(db);
   const password = adminPasswordForTest();
   const login = bootstrapAdminUser();
   const existing = await db.usuario.findFirst({
@@ -128,15 +136,19 @@ async function createVendorUser(usuario: string) {
 }
 
 describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () => {
+  let db: ReturnType<typeof createIntegrationPrismaClient>;
   let adminId: string;
   let adminPassword: string;
   let adminUsuario: string;
 
   before(async () => {
+    assertIntegrationPointsAtTestDatabase();
+    db = createIntegrationPrismaClient();
     await seedMinimalBusiness(db);
   });
 
   beforeEach(async () => {
+    assertIntegrationPointsAtTestDatabase();
     await resetTicketDomain(db);
     await seedMinimalBusiness(db);
     await db.configNegocio.upsert({
@@ -295,6 +307,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         idempotencyKey: parsed.idempotencyKey,
       },
       AHORA_VE_MANANA,
+      db,
     );
     assert.equal(created.ticket.vendedorId, va.id);
     const row = await db.ticket.findUniqueOrThrow({
@@ -317,6 +330,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "1.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     const ticketB = await createTicket(
       {
@@ -326,6 +340,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 15, numeroAnimal: "05", importe: "1.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     // Histórico null
@@ -394,6 +409,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     const anulado = await anularTicket(db, {
@@ -471,9 +487,10 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "5.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
-    let pub = await getPublicTicketByCodigo(created.ticket.codigoPublico);
+    let pub = await getPublicTicketByCodigo(created.ticket.codigoPublico, db);
     assert.ok(pub);
     assert.equal(pub!.estado, "PENDIENTE");
 
@@ -485,7 +502,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       },
     });
 
-    pub = await getPublicTicketByCodigo(created.ticket.codigoPublico);
+    pub = await getPublicTicketByCodigo(created.ticket.codigoPublico, db);
     assert.equal(pub!.estado, "GANADOR");
     assert.equal(pub!.premioTotal, "150.00");
     assert.equal(pub!.lineas[0]!.estado, "GANADORA");
@@ -497,7 +514,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       data: { numero: "05" },
     });
 
-    pub = await getPublicTicketByCodigo(created.ticket.codigoPublico);
+    pub = await getPublicTicketByCodigo(created.ticket.codigoPublico, db);
     assert.equal(pub!.estado, "NO_GANADOR");
     assert.equal(pub!.premioTotal, "0.00");
     assert.equal(pub!.lineas[0]!.estado, "NO_GANADORA");
@@ -521,6 +538,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "5.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     const anular = await createTicket(
       {
@@ -530,6 +548,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "10.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     await anularTicket(db, {
       id: anular.ticket.id,
@@ -537,7 +556,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       anuladoPorId: adminId,
     });
 
-    const exp = await getExposureForDraw({ fechaJuego: fecha, hora: 14 });
+    const exp = await getExposureForDraw({ fechaJuego: fecha, hora: 14, db });
     assert.equal(exp.totalApostado, "5.00");
     assert.equal(exp.totalExposicion, "150.00");
   });
@@ -555,6 +574,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "5.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     assert.equal(oldT.ticket.multiplicadorUsado, 30);
 
@@ -567,7 +587,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       data: { fecha: fechaJuegoDate(), hora: 14, numero: "03" },
     });
 
-    const pubOld = await getPublicTicketByCodigo(oldT.ticket.codigoPublico);
+    const pubOld = await getPublicTicketByCodigo(oldT.ticket.codigoPublico, db);
     assert.equal(pubOld!.premioTotal, "150.00"); // 5 × 30
 
     const newT = await createTicket(
@@ -578,6 +598,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 15, numeroAnimal: "05", importe: "5.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     assert.equal(newT.ticket.multiplicadorUsado, 25);
   });
@@ -595,8 +616,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
     };
 
-    const first = await createTicket(input, AHORA_VE_MANANA);
-    const second = await createTicket(input, AHORA_VE_MANANA);
+    const first = await createTicket(input, AHORA_VE_MANANA, db);
+    const second = await createTicket(input, AHORA_VE_MANANA, db);
     assert.equal(second.idempotentReplay, true);
     assert.equal(second.ticket.id, first.ticket.id);
     assert.equal(await db.ticket.count(), 1);
@@ -609,13 +630,14 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
             lineas: [{ hora: 14, numeroAnimal: "03", importe: "20.00" }],
           },
           AHORA_VE_MANANA,
-        ),
+      db,
+    ),
       IdempotencyConflictError,
     );
 
     await assert.rejects(
       () =>
-        createTicket({ ...input, vendedorId: vb.id }, AHORA_VE_MANANA),
+        createTicket({ ...input, vendedorId: vb.id }, AHORA_VE_MANANA, db),
       IdempotencyConflictError,
     );
   });
@@ -640,6 +662,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
             ],
           },
           AHORA_VE_MANANA,
+          db,
         ),
       ),
     );
@@ -658,7 +681,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       lineas: [{ hora: 14, numeroAnimal: "03", importe: "2.00" }],
     };
     const parallel = await Promise.all(
-      Array.from({ length: 10 }, () => createTicket(input, AHORA_VE_MANANA)),
+      Array.from({ length: 10 }, () => createTicket(input, AHORA_VE_MANANA, db)),
     );
     assert.equal(new Set(parallel.map((r) => r.ticket.id)).size, 1);
     assert.equal(await db.ticket.count(), 1);
@@ -683,7 +706,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
             lineas: [{ hora: 14, numeroAnimal: "03", importe: "1.00" }],
           },
           AHORA_VE_MANANA,
-        ),
+      db,
+    ),
       DrawClosedError,
     );
 
@@ -699,6 +723,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
             lineas: [{ hora: 15, numeroAnimal: "05", importe: "1.00" }],
           },
           ahoraHora15,
+          db,
         ),
       DrawClosedError,
     );
@@ -714,6 +739,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
             lineas: [{ hora: 10, numeroAnimal: "05", importe: "1.00" }],
           },
           ahoraHora15,
+          db,
         ),
       DrawClosedError,
     );
@@ -732,7 +758,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
             ],
           },
           AHORA_VE_MANANA,
-        ),
+      db,
+    ),
       DrawClosedError,
     );
     assert.equal(await db.ticket.count(), 0);
@@ -750,17 +777,20 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "1.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     assert.ok(created.ticket.codigoPublico.length > 8);
 
     const byCodigo = await getPublicTicketByCodigo(
       created.ticket.codigoPublico,
+      db,
     );
     assert.ok(byCodigo);
     assert.equal(byCodigo!.id, created.ticket.id);
 
     const byVisible = await getPublicTicketByCodigo(
       created.ticket.numeroVisible,
+      db,
     );
     assert.equal(byVisible, null);
   });
@@ -842,7 +872,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
             lineas: [{ hora: 14, numeroAnimal: "99", importe: "1.00" }],
           },
           AHORA_VE_MANANA,
-        ),
+      db,
+    ),
       AnimalNotFoundError,
     );
     assert.equal(await db.ticket.count(), 0);
@@ -991,6 +1022,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         ],
       },
       AHORA_VE_MANANA,
+      db,
     );
 
     const anulado = await createTicket(
@@ -1001,6 +1033,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         lineas: [{ hora: 14, numeroAnimal: "03", importe: "50.00" }],
       },
       AHORA_VE_MANANA,
+      db,
     );
     await anularTicket(db, {
       id: anulado.ticket.id,

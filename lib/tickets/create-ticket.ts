@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { recordAuditEvent } from "@/lib/audit/audit";
@@ -149,13 +149,20 @@ function esConflictoIdempotencyKey(error: unknown): boolean {
   return false;
 }
 
+type CreateTicketDb = Pick<PrismaClient, "ticket" | "$transaction">;
+
 /**
  * Crea un ticket EMITIDO con sus líneas en una sola transacción.
  * Idempotencia: UNIQUE(idempotencyKey) + requestHash + vendedorId de sesión.
+ *
+ * `db` opcional: en integración/aceptación pasar el cliente de
+ * `createIntegrationPrismaClient`. Por defecto usa `@/lib/prisma`
+ * (guarded si RUN_INTEGRATION / RUN_ACCEPTANCE).
  */
 export async function createTicket(
   input: CreateTicketInput,
   ahora = new Date(),
+  db: CreateTicketDb = prisma,
 ): Promise<CreateTicketResult> {
   const fechaJuego = validarFechaJuegoHoy(input.fechaJuego, ahora);
   const lineasBasicas = validarLineasBasicas(input.lineas);
@@ -196,7 +203,7 @@ export async function createTicket(
   };
 
   // Fast-path: evita consumir TicketCounter en replay.
-  const existente = await prisma.ticket.findUnique({
+  const existente = await db.ticket.findUnique({
     where: { idempotencyKey },
     include: includeLineas,
   });
@@ -209,7 +216,7 @@ export async function createTicket(
   }
 
   try {
-    const ticket = await prisma.$transaction(
+    const ticket = await db.$transaction(
       async (tx) => {
       const multiplicadorUsado = await getMultiplicadorPremio(tx);
       if (!Number.isInteger(multiplicadorUsado) || multiplicadorUsado <= 0) {
@@ -310,7 +317,7 @@ export async function createTicket(
       throw error;
     }
 
-    const race = await prisma.ticket.findUnique({
+    const race = await db.ticket.findUnique({
       where: { idempotencyKey },
       include: includeLineas,
     });

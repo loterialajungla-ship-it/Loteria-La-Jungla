@@ -1,3 +1,4 @@
+import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import {
@@ -32,14 +33,17 @@ export type TicketPublico = {
 /**
  * Lectura pública por codigoPublico + liquidación derivada vs Resultado.
  * Solo lectura. No usa ConfigNegocio; usa Ticket.multiplicadorUsado.
+ *
+ * `db` opcional para suites (cliente de fábrica); default `@/lib/prisma`.
  */
 export async function getPublicTicketByCodigo(
   codigoPublico: string,
+  db: PrismaClient = prisma,
 ): Promise<TicketPublico | null> {
   const codigo = codigoPublico.trim();
   if (!codigo) return null;
 
-  const ticket = await prisma.ticket.findUnique({
+  const ticket = await db.ticket.findUnique({
     where: { codigoPublico: codigo },
     include: {
       lineas: {
@@ -55,7 +59,7 @@ export async function getPublicTicketByCodigo(
   const resultados =
     horas.length === 0
       ? []
-      : await prisma.resultado.findMany({
+      : await db.resultado.findMany({
           where: {
             fecha: ticket.fechaJuego,
             hora: { in: horas },

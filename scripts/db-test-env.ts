@@ -1,11 +1,21 @@
 /**
- * Helpers compartidos para runners de tests contra TEST_DATABASE_URL.
+ * Helpers compartidos para runners contra `TEST_DATABASE_URL`.
+ *
+ * `runDbTestSuite`:
+ *   - `missingUrlMode: "fail"` → sin TEST válido: exit 1 (integración).
+ *   - `missingUrlMode: "skip"` → solo si el error es «Falta TEST_DATABASE_URL»:
+ *     exit 0 con mensaje SKIPPED (acceptance); URL inválida / no allowlisted
+ *     sigue siendo exit 1.
+ *   - Tras validar, reescribe DATABASE_URL/DIRECT_URL al destino TEST y exige
+ *     `assertIntegrationWriteTarget` antes de cualquier PrismaClient/migrate.
+ *   - No registra URLs completas ni secretos.
  */
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { assertIntegrationWriteTarget } from "../lib/db/neon-endpoint-guard";
 import { assertSafeTestDatabase } from "../lib/tickets/integration/safe-test-db";
 
 export const ROOT = path.resolve(__dirname, "..");
@@ -156,6 +166,7 @@ export async function runDbTestSuite(opts: DbSuiteOptions): Promise<never> {
 
   const migrateEnv = {
     ...process.env,
+    TEST_DATABASE_URL: testUrl,
     DATABASE_URL: testUrl,
     DIRECT_URL: testUrl,
     PRISMA_DISABLE_WARNINGS: "1",
@@ -163,11 +174,20 @@ export async function runDbTestSuite(opts: DbSuiteOptions): Promise<never> {
 
   const testEnv = {
     ...process.env,
+    TEST_DATABASE_URL: testUrl,
     DATABASE_URL: usingDirect ? directUrl : testUrl,
     DIRECT_URL: usingDirect ? directUrl : testUrl,
     [opts.runFlag]: "1",
     PRISMA_DISABLE_WARNINGS: "1",
   };
+
+  try {
+    assertIntegrationWriteTarget(migrateEnv);
+    assertIntegrationWriteTarget(testEnv);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : e);
+    process.exit(1);
+  }
 
   if (usingDirect) {
     console.log(

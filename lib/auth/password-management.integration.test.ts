@@ -1,11 +1,11 @@
 /**
  * Integration: cambio / reset de contraseña + invalidación de sesiones.
- * Solo vía npm run test:integration (RUN_INTEGRATION=1).
+ * Solo vía `npm run test:integration` (`RUN_INTEGRATION=1`).
+ * Cliente: `createIntegrationPrismaClient` tras assert de destino TEST.
  */
 
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { prisma } from "@/lib/prisma";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { loginWithCredentials } from "@/lib/auth/login";
 import { resolveSessionByToken } from "@/lib/auth/session";
@@ -18,25 +18,30 @@ import {
   UserValidationError,
 } from "@/lib/auth/errors";
 import {
+  createIntegrationPrismaClient,
   resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 
 const ENABLED = process.env.RUN_INTEGRATION === "1";
-const db = prisma;
 
 const ADMIN_PASS = "admin-pass-12";
 const VENDOR_PASS = "vendor-pass-12";
 
 describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
+  let db: ReturnType<typeof createIntegrationPrismaClient>;
   let adminId: string;
   let vendorId: string;
 
   before(async () => {
+    assertIntegrationPointsAtTestDatabase();
+    db = createIntegrationPrismaClient();
     await seedMinimalBusiness(db);
   });
 
   beforeEach(async () => {
+    assertIntegrationPointsAtTestDatabase();
     await resetTicketDomain(db);
     await seedMinimalBusiness(db);
 

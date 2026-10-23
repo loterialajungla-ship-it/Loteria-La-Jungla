@@ -1,19 +1,25 @@
 /**
- * Runner de tests de integración PostgreSQL.
+ * Runner oficial: `npm run test:integration`
  *
- * Uso:
- *   1. Crear una DB PostgreSQL dedicada (local / Neon branch / CI).
- *   2. En .env (o entorno):
- *        TEST_DATABASE_URL=postgresql://...
- *   3. npm run test:integration
+ * Orden de seguridad (antes de Prisma / migrate / writes):
+ *   1. Carga `.env` solo en process.env (no imprime valores).
+ *   2. `assertSafeTestDatabase` — exige `TEST_DATABASE_URL` = endpoint TEST
+ *      allowlisted; rechaza prod/recovery/dev-recovery y URLs no Neon TEST.
+ *      Si falta o es inválida → exit 1 (NO skip, NO fallback a DATABASE_URL).
+ *   3. Reescribe `TEST_DATABASE_URL` / `DATABASE_URL` / `DIRECT_URL` del hijo
+ *      a la URL TEST validada (DIRECT preferido sin `-pooler` en la suite).
+ *   4. `assertIntegrationWriteTarget` sobre migrateEnv y testEnv.
+ *   5. Recién entonces `prepareTestDatabase` / `migrate deploy` / spawn.
  *
- * NUNCA apunta a DATABASE_URL / DIRECT_URL de producción.
+ * Las suites viven en `*.integration.test.ts` (excluidas de `npm test`).
+ * No registrar connection strings, passwords ni tokens.
  */
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { assertIntegrationWriteTarget } from "../lib/db/neon-endpoint-guard";
 import { assertSafeTestDatabase } from "../lib/tickets/integration/safe-test-db";
 
 const ROOT = path.resolve(__dirname, "..");
@@ -43,6 +49,8 @@ function loadEnvFile(filePath: string): void {
 
 function listIntegrationTestFiles(): string[] {
   const dirs = [
+    // Resultados automáticos primero: no depende del reloj real de ventas.
+    path.join(ROOT, "lib", "resultados"),
     path.join(ROOT, "lib", "tickets", "integration"),
     path.join(ROOT, "lib", "auth"),
     path.join(ROOT, "lib", "reports"),
@@ -167,6 +175,7 @@ async function main() {
 
   const migrateEnv = {
     ...process.env,
+    TEST_DATABASE_URL: testUrl,
     DATABASE_URL: testUrl,
     DIRECT_URL: testUrl,
     PRISMA_DISABLE_WARNINGS: "1",
@@ -174,11 +183,20 @@ async function main() {
 
   const testEnv = {
     ...process.env,
+    TEST_DATABASE_URL: testUrl,
     DATABASE_URL: usingDirect ? directUrl : testUrl,
     DIRECT_URL: usingDirect ? directUrl : testUrl,
     RUN_INTEGRATION: "1",
     PRISMA_DISABLE_WARNINGS: "1",
   };
+
+  try {
+    assertIntegrationWriteTarget(migrateEnv);
+    assertIntegrationWriteTarget(testEnv);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : e);
+    process.exit(1);
+  }
 
   if (usingDirect) {
     console.log(
