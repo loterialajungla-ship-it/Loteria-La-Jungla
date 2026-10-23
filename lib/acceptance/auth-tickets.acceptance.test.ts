@@ -91,7 +91,9 @@ function adminPasswordForTest(): string {
 
 const VENDOR_PASS = "vendor-test-12";
 
-async function bootstrapAdmin() {
+async function bootstrapAdmin(
+  db: ReturnType<typeof createIntegrationPrismaClient>,
+) {
   assertIntegrationPrismaClient(db);
   const password = adminPasswordForTest();
   const login = bootstrapAdminUser();
@@ -127,7 +129,10 @@ async function bootstrapAdmin() {
   return { user, password };
 }
 
-async function createVendorUser(usuario: string) {
+async function createVendorUser(
+  db: ReturnType<typeof createIntegrationPrismaClient>,
+  usuario: string,
+) {
   return createVendor(db, {
     nombre: `Vend ${usuario}`,
     usuario,
@@ -156,7 +161,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       update: { valorInt: 30 },
       create: { clave: "MULTIPLICADOR_PREMIO", valorInt: 30 },
     });
-    const boot = await bootstrapAdmin();
+    const boot = await bootstrapAdmin(db);
     adminId = boot.user.id;
     adminPassword = boot.password;
     adminUsuario = boot.user.usuario;
@@ -218,7 +223,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   });
 
   it("login VENDEDOR asocia sesión al Usuario correcto", async () => {
-    const vendor = await createVendorUser("vend_acc_a");
+    const vendor = await createVendorUser(db, "vend_acc_a");
     const result = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -234,7 +239,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   // ——— 5. Autorización ———
   it("permisos UI/API ADMIN vs VENDEDOR; /ticket público", async () => {
-    const vendor = await createVendorUser("vend_perm");
+    const vendor = await createVendorUser(db, "vend_perm");
     const adminLogin = await loginWithCredentials(db, {
       usuario: adminUsuario,
       password: adminPassword,
@@ -289,8 +294,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 6–8. Tickets propiedad ———
   it("creación ticket: vendedorId de sesión; ignore body ajeno", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const va = await createVendorUser("vend_own_a");
-    const vb = await createVendorUser("vend_own_b");
+    const va = await createVendorUser(db, "vend_own_a");
+    const vb = await createVendorUser(db, "vend_own_b");
 
     const parsed = parseCreateTicketBody({
       fechaJuego: fecha,
@@ -319,8 +324,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   it("historial: A ve solo suyos; B ajeno → 404; ADMIN ve ambos + null", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const va = await createVendorUser("vend_hist_a");
-    const vb = await createVendorUser("vend_hist_b");
+    const va = await createVendorUser(db, "vend_hist_a");
+    const vb = await createVendorUser(db, "vend_hist_b");
 
     const ticketA = await createTicket(
       {
@@ -400,7 +405,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 9. Anulación ———
   it("anulación ADMIN: anuladoPorId + vendedor sigue consultando", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_anul");
+    const vendor = await createVendorUser(db, "vend_anul");
     const created = await createTicket(
       {
         fechaJuego: fecha,
@@ -440,7 +445,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   // ——— 10–11. Desactivación / reactivación ———
   it("desactivar invalida sesión; reactivar exige login nuevo", async () => {
-    const vendor = await createVendorUser("vend_deact");
+    const vendor = await createVendorUser(db, "vend_deact");
     const login = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -478,7 +483,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 12–13. Resultados / liquidación ———
   it("resultado y cambio de resultado: liquidación derivada", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_liq");
+    const vendor = await createVendorUser(db, "vend_liq");
     const created = await createTicket(
       {
         fechaJuego: fecha,
@@ -528,7 +533,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 14. Exposición ———
   it("exposición ignora anulados", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_exp");
+    const vendor = await createVendorUser(db, "vend_exp");
 
     await createTicket(
       {
@@ -564,7 +569,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 15. Multiplicador histórico ———
   it("multiplicadorUsado histórico vs config nueva", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_mult");
+    const vendor = await createVendorUser(db, "vend_mult");
 
     const oldT = await createTicket(
       {
@@ -606,8 +611,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 16–17. Idempotencia + concurrencia ———
   it("idempotencia: replay, body distinto, otro vendedor", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const va = await createVendorUser("vend_idem_a");
-    const vb = await createVendorUser("vend_idem_b");
+    const va = await createVendorUser(db, "vend_idem_a");
+    const vb = await createVendorUser(db, "vend_idem_b");
     const key = newIdempotencyKey();
     const input = {
       fechaJuego: fecha,
@@ -644,7 +649,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   it("concurrencia: 20 numeros únicos + 10 same-key → 1 ticket", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_conc");
+    const vendor = await createVendorUser(db, "vend_conc");
 
     const results = await Promise.all(
       Array.from({ length: 20 }, (_, i) =>
@@ -670,9 +675,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
     await resetTicketDomain(db);
     await seedMinimalBusiness(db);
-    const boot = await bootstrapAdmin();
+    const boot = await bootstrapAdmin(db);
     adminId = boot.user.id;
-    const vendor2 = await createVendorUser("vend_conc2");
+    const vendor2 = await createVendorUser(db, "vend_conc2");
     const key = newIdempotencyKey();
     const input = {
       fechaJuego: fecha,
@@ -690,7 +695,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 18. Horas cerradas ———
   it("horas cerradas / mixtas rechazan", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_hora");
+    const vendor = await createVendorUser(db, "vend_hora");
 
     // Hora con resultado
     await db.resultado.create({
@@ -768,7 +773,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 19. QR / público ———
   it("consulta pública por codigoPublico (no numeroVisible)", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_qr");
+    const vendor = await createVendorUser(db, "vend_qr");
     const created = await createTicket(
       {
         fechaJuego: fecha,
@@ -797,7 +802,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   // ——— 20–21. Expiración + logout ———
   it("sesión expirada y logout invalidan", async () => {
-    const vendor = await createVendorUser("vend_sess");
+    const vendor = await createVendorUser(db, "vend_sess");
     const login = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -861,7 +866,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // Animal inexistente (rollback smoke)
   it("animal inexistente no deja ticket", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_roll");
+    const vendor = await createVendorUser(db, "vend_roll");
     await assert.rejects(
       () =>
         createTicket(
@@ -881,7 +886,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   // ——— Passwords: change + admin reset ———
   it("change-password: invalida sesión; antigua falla; nueva login OK", async () => {
-    const vendor = await createVendorUser("vend_pw_chg");
+    const vendor = await createVendorUser(db, "vend_pw_chg");
     const login = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -911,7 +916,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   });
 
   it("change-password rechaza actual incorrecta / igual / corta / inactivo", async () => {
-    const vendor = await createVendorUser("vend_pw_bad");
+    const vendor = await createVendorUser(db, "vend_pw_bad");
     await assert.rejects(
       () =>
         changeOwnPassword(db, {
@@ -958,7 +963,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   });
 
   it("ADMIN reset VENDEDOR: hash nuevo, sesiones 0, inactivo no reactivado; no reset ADMIN", async () => {
-    const vendor = await createVendorUser("vend_pw_rst");
+    const vendor = await createVendorUser(db, "vend_pw_rst");
     await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -1009,7 +1014,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— Reportes ADMIN ———
   it("reporte diario: anulados fuera; consistencia vendedor/hora; sin passwordHash", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser("vend_rep_a");
+    const vendor = await createVendorUser(db, "vend_rep_a");
 
     await createTicket(
       {
