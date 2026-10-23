@@ -14,6 +14,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { assertIntegrationWriteTarget } from "../lib/db/neon-endpoint-guard";
 import { assertSafeTestDatabase } from "../lib/tickets/integration/safe-test-db";
 
 const ROOT = path.resolve(__dirname, "..");
@@ -85,8 +86,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  process.env.TEST_DATABASE_URL = testUrl;
   process.env.DATABASE_URL = testUrl;
   process.env.DIRECT_URL = testUrl;
+
+  try {
+    assertIntegrationWriteTarget(process.env);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : e);
+    process.exit(1);
+  }
+
   delete (globalThis as { prisma?: unknown }).prisma;
 
   const adminUser = envUser("MANUAL_TEST_ADMIN_USER", MANUAL_ADMIN_USER_DEFAULT);
@@ -140,26 +150,11 @@ async function main(): Promise<void> {
   console.log(`→ hora actual VE: ${horaActualVe}:00`);
 
   try {
-    const animales = [
-      { numero: "0", nombre: "Delfín" },
-      { numero: "00", nombre: "Ballena" },
-      { numero: "03", nombre: "Ciempiés" },
-      { numero: "05", nombre: "León" },
-      { numero: "15", nombre: "Zorro" },
-      { numero: "22", nombre: "Camello" },
-    ] as const;
-
-    for (const a of animales) {
-      await db.animal.upsert({
-        where: { numero: a.numero },
-        update: { nombre: a.nombre },
-        create: {
-          numero: a.numero,
-          nombre: a.nombre,
-          imagen: `/animals/${a.numero}.png`,
-        },
-      });
-    }
+    const { upsertCanonicalAnimals } = await import(
+      "../lib/resultados/ensure-canonical-animals"
+    );
+    const { count: animalesCount } = await upsertCanonicalAnimals(db);
+    console.log(`→ catálogo canónico: ${animalesCount} animales`);
 
     await db.configNegocio.upsert({
       where: { clave: "MULTIPLICADOR_PREMIO" },
@@ -342,46 +337,43 @@ async function main(): Promise<void> {
       });
     }
 
-    const previoResultado = await db.resultado.findUnique({
-      where: { fecha_hora: { fecha: fechaDate, hora: horaA } },
-      select: { id: true, numero: true },
-    });
+    const {
+      ensureSeedManualResult,
+      SeedManualResultConflictError,
+      SEED_MANUAL_RESULT_NUMERO,
+    } = await import("../lib/resultados/ensure-seed-manual-result");
 
-    const resultado = await db.resultado.upsert({
-      where: { fecha_hora: { fecha: fechaDate, hora: horaA } },
-      update: { numero: "03" },
-      create: { fecha: fechaDate, hora: horaA, numero: "03" },
-      select: { id: true, numero: true, hora: true },
-    });
-
-    if (!previoResultado) {
-      await recordAuditEvent(db, {
-        usuarioId: admin.id,
-        accion: "CREAR_RESULTADO",
-        entidad: "RESULTADO",
-        entidadId: resultado.id,
-        detalle: {
-          fecha: fechaStr,
-          hora: horaA,
-          numeroAnterior: null,
-          numeroNuevo: "03",
-          origen: "seed:manual-test",
-        },
+    let resultadoHora: number;
+    let resultadoNumero: string;
+    try {
+      const ensured = await ensureSeedManualResult(db, {
+        fecha: fechaDate,
+        hora: horaA,
+        numero: SEED_MANUAL_RESULT_NUMERO,
+        adminUserId: admin.id,
       });
-    } else if (previoResultado.numero !== "03") {
-      await recordAuditEvent(db, {
-        usuarioId: admin.id,
-        accion: "MODIFICAR_RESULTADO",
-        entidad: "RESULTADO",
-        entidadId: resultado.id,
-        detalle: {
-          fecha: fechaStr,
-          hora: horaA,
-          numeroAnterior: previoResultado.numero,
-          numeroNuevo: "03",
-          origen: "seed:manual-test",
-        },
-      });
+      if (ensured.status === "created") {
+        resultadoHora = ensured.row.hora;
+        resultadoNumero = ensured.row.numero;
+        console.log(
+          `→ resultado de prueba creado (dominio create-only): ${fechaStr} ${resultadoHora}:00 → ${resultadoNumero}`,
+        );
+      } else {
+        resultadoHora = ensured.hora;
+        resultadoNumero = ensured.numero;
+        console.log(
+          `→ resultado de prueba ya era ${resultadoNumero} (${fechaStr} ${resultadoHora}:00); sin cambios`,
+        );
+      }
+    } catch (e) {
+      if (e instanceof SeedManualResultConflictError) {
+        console.error(e.message);
+        console.error(
+          "Usa la corrección controlada en admin (confirmación + motivo). seed:manual-test no sobrescribe resultados.",
+        );
+      }
+      // Propagar → main().catch exit 1; finally desconecta Prisma.
+      throw e;
     }
 
     const publicBase =
@@ -407,7 +399,9 @@ async function main(): Promise<void> {
     );
     console.log("");
     console.log("Resultado de prueba:");
-    console.log(`  ${fechaStr} ${horaA}:00 → animal 03`);
+    console.log(
+      `  ${fechaStr} ${resultadoHora}:00 → animal ${resultadoNumero}`,
+    );
     console.log(
       "  Ticket multihora: 03 GANADORA, 15 NO_GANADORA, líneas hora B PENDIENTES",
     );

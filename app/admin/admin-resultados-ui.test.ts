@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  codigoErrorResultado,
   estadoResultadoTexto,
   etiquetaResultadoAnimal,
   formatResultadoLabel,
@@ -38,11 +39,17 @@ describe("admin-resultados-ui — guardar / modificar respuesta API", () => {
   it("parsea respuesta ok de guardar resultado", () => {
     const parsed = parseResultadoApiOk({
       ok: true,
-      resultado: { hora: 14, numero: "03", nombre: "Ciempiés" },
+      resultado: {
+        hora: 14,
+        numero: "03",
+        nombre: "Ciempiés",
+        origen: "MANUAL",
+      },
     });
     assert.ok(parsed);
     assert.equal(parsed!.resultado.numero, "03");
     assert.equal(parsed!.resultado.nombre, "Ciempiés");
+    assert.equal(parsed!.resultado.origen, "MANUAL");
   });
 
   it("rechaza payload inválido", () => {
@@ -60,6 +67,22 @@ describe("admin-resultados-ui — guardar / modificar respuesta API", () => {
       "Datos inválidos",
     );
     assert.equal(mensajeErrorResultado({}), "No se pudo guardar el resultado.");
+  });
+
+  it("extrae código estructurado de corrección/conflicto", () => {
+    assert.equal(
+      codigoErrorResultado({
+        error: { code: "CORRECTION_REQUIRED", message: "Confirma" },
+      }),
+      "CORRECTION_REQUIRED",
+    );
+    assert.equal(
+      codigoErrorResultado({
+        error: { code: "RESULT_CONFLICT", message: "Cambió" },
+      }),
+      "RESULT_CONFLICT",
+    );
+    assert.equal(codigoErrorResultado({ error: "texto" }), null);
   });
 });
 

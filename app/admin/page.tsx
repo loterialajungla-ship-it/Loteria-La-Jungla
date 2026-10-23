@@ -76,7 +76,7 @@ export default async function AdminPage({ searchParams }: Props) {
             />
           </span>
         }
-        description="Consulta el estado de cada sorteo, publica o modifica el animal ganador y revisa la exposición. La liquidación de tickets se actualiza sola al consultar."
+        description="Consulta el estado de cada sorteo, publica resultados o corrígelos con confirmación y motivo. La liquidación de tickets se recalcula sola al consultar."
       />
 
       <nav
@@ -190,6 +190,7 @@ export default async function AdminPage({ searchParams }: Props) {
               horaLabel={formatearHoraSorteo(hora)}
               animales={animales}
               numeroInicial={actual?.numero ?? ""}
+              origenInicial={actual?.origen ?? null}
             />
           );
         })}

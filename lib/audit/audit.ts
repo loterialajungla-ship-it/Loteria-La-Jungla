@@ -25,7 +25,8 @@ export const AUDIT_FORBIDDEN_DETAIL_KEYS = [
 export type AuditDetalle = Record<string, unknown>;
 
 export type RecordAuditEventInput = {
-  usuarioId: string;
+  /** null = evento de sistema (cron / automático). */
+  usuarioId: string | null;
   accion: AccionAuditoria;
   entidad: EntidadAuditoria;
   entidadId: string;
@@ -35,7 +36,7 @@ export type RecordAuditEventInput = {
 export type AuditListItem = {
   id: string;
   createdAt: string;
-  usuarioId: string;
+  usuarioId: string | null;
   usuarioNombre: string;
   usuarioLogin: string;
   accion: AccionAuditoria;
@@ -69,7 +70,7 @@ type AuditoriaCreateClient = {
   auditoria: {
     create: (args: {
       data: {
-        usuarioId: string;
+        usuarioId: string | null;
         accion: AccionAuditoria;
         entidad: EntidadAuditoria;
         entidadId: string;
@@ -149,13 +150,16 @@ export async function recordAuditEvent(
   db: AuditoriaCreateClient,
   input: RecordAuditEventInput,
 ): Promise<void> {
-  const usuarioId = input.usuarioId?.trim();
   const entidadId = input.entidadId?.trim();
-  if (!usuarioId) {
-    throw new Error("Auditoría: usuarioId obligatorio.");
-  }
   if (!entidadId) {
     throw new Error("Auditoría: entidadId obligatorio.");
+  }
+
+  const rawUser = input.usuarioId;
+  const usuarioId =
+    rawUser == null ? null : rawUser.trim() || null;
+  if (rawUser != null && !usuarioId) {
+    throw new Error("Auditoría: usuarioId inválido.");
   }
 
   await db.auditoria.create({

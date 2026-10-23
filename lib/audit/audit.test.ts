@@ -128,6 +128,40 @@ describe("formato legible", () => {
     assert.match(text, /→/);
   });
 
+  it("MODIFICAR_RESULTADO incluye motivo de corrección", () => {
+    const text = formatAuditDetalleLegible({
+      accion: "MODIFICAR_RESULTADO",
+      entidad: "RESULTADO",
+      entidadId: "r1",
+      detalle: {
+        fecha: "2026-10-18",
+        hora: 14,
+        numeroAnterior: "03",
+        numeroNuevo: "05",
+        motivo: "Error de publicación",
+        correccionControlada: true,
+      },
+    });
+    assert.match(text, /Motivo: Error de publicación/);
+  });
+
+  it("CREAR_RESULTADO distingue origen automático", () => {
+    const text = formatAuditDetalleLegible({
+      accion: "CREAR_RESULTADO",
+      entidad: "RESULTADO",
+      entidadId: "r2",
+      detalle: {
+        fecha: "2026-10-02",
+        hora: 10,
+        numeroNuevo: "05",
+        origen: "AUTOMATICO",
+      },
+      nombrePorNumero: new Map([["05", "León"]]),
+    });
+    assert.match(text, /05 - León/);
+    assert.match(text, /automático/);
+  });
+
   it("ANULAR_TICKET con motivo", () => {
     const text = formatAuditDetalleLegible({
       accion: "ANULAR_TICKET",

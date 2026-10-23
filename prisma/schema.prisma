@@ -36,19 +36,33 @@ model Animal {
 
 
 
+enum OrigenResultado {
+
+  MANUAL
+
+  AUTOMATICO
+
+}
+
+
+
 model Resultado {
 
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
 
-  fecha     DateTime @db.Date
+  fecha     DateTime        @db.Date
 
   hora      Int // hora del sorteo, 9 a 19 (11 sorteos/día, uno cada hora)
 
   numero    String
 
-  animal    Animal   @relation(fields: [numero], references: [numero])
+  animal    Animal          @relation(fields: [numero], references: [numero])
 
-  createdAt DateTime @default(now())
+  /// MANUAL = cargado por ADMIN; AUTOMATICO = generado al llegar la hora sin resultado.
+
+  origen    OrigenResultado @default(MANUAL)
+
+  createdAt DateTime        @default(now())
 
 
 
@@ -200,6 +214,9 @@ enum AccionAuditoria {
 
   MODIFICAR_RESULTADO
 
+  /// Provisionamiento del primer ADMIN (bootstrap de producción / sistema).
+  CREAR_ADMIN
+
 }
 
 
@@ -224,9 +241,11 @@ model Auditoria {
 
   id        String            @id @default(cuid())
 
-  usuarioId String
+  /// NULL = evento de sistema (p. ej. resultado AUTOMATICO vía cron).
 
-  usuario   Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuarioId String?
+
+  usuario   Usuario?          @relation(fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   accion    AccionAuditoria
 

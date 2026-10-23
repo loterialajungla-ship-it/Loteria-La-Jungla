@@ -30,7 +30,8 @@ export function formatAuditDetalleLegible(args: {
   const d = args.detalle ?? {};
   const names = args.nombrePorNumero ?? new Map<string, string>();
 
-  switch (args.accion) {
+  // Incluye CREAR_ADMIN del schema aunque el client no se haya regenerado aún.
+  switch (args.accion as AccionAuditoria | "CREAR_ADMIN") {
     case "CREAR_RESULTADO": {
       const fecha = str(d.fecha);
       const hora = typeof d.hora === "number" ? d.hora : Number(d.hora);
@@ -38,7 +39,14 @@ export function formatAuditDetalleLegible(args: {
       const horaLabel = Number.isInteger(hora)
         ? formatearHoraSorteo(hora)
         : "?";
-      return `Resultado ${fecha ?? "?"} ${horaLabel}: ${animalLabel(numero, names)}`;
+      const origen = str(d.origen);
+      const origenLabel =
+        origen === "AUTOMATICO"
+          ? " (automático)"
+          : origen === "MANUAL"
+            ? " (manual)"
+            : "";
+      return `Resultado ${fecha ?? "?"} ${horaLabel}: ${animalLabel(numero, names)}${origenLabel}`;
     }
     case "MODIFICAR_RESULTADO": {
       const ant = str(d.numeroAnterior);
@@ -48,7 +56,16 @@ export function formatAuditDetalleLegible(args: {
       const horaLabel = Number.isInteger(hora)
         ? formatearHoraSorteo(hora)
         : "?";
-      return `Resultado ${fecha ?? "?"} ${horaLabel}: ${animalLabel(ant, names)} → ${animalLabel(neu, names)}`;
+      const origen = str(d.origen);
+      const origenLabel =
+        origen === "AUTOMATICO"
+          ? " (automático)"
+          : origen === "MANUAL"
+            ? " (manual)"
+            : "";
+      const motivo = str(d.motivo);
+      const base = `Resultado ${fecha ?? "?"} ${horaLabel}: ${animalLabel(ant, names)} → ${animalLabel(neu, names)}${origenLabel}`;
+      return motivo ? `${base}. Motivo: ${motivo}` : base;
     }
     case "ANULAR_TICKET": {
       const motivo = str(d.motivo) ?? str(d.motivoAnulacion) ?? "";
@@ -66,6 +83,13 @@ export function formatAuditDetalleLegible(args: {
       const nombre = str(d.nombre) ?? "";
       const usuario = str(d.usuario) ?? "";
       return `Vendedor ${nombre}${usuario ? ` (${usuario})` : ""}`.trim();
+    }
+    case "CREAR_ADMIN": {
+      const usuario = str(d.usuario) ?? args.entidadId;
+      const origen = str(d.origen);
+      return origen
+        ? `Administrador ${usuario} (${origen})`
+        : `Administrador ${usuario}`;
     }
     case "ACTIVAR_VENDEDOR":
     case "DESACTIVAR_VENDEDOR": {

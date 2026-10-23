@@ -8,10 +8,25 @@ export type AnimalOpcion = {
   nombre: string;
 };
 
+export type OrigenResultadoUi = "MANUAL" | "AUTOMATICO";
+
 export type ResultadoActual = {
   numero: string;
   nombre: string;
+  origen?: OrigenResultadoUi;
 };
+
+export function etiquetaOrigenResultado(
+  origen: OrigenResultadoUi | null | undefined,
+): { label: string; tone: "info" | "neutral" } | null {
+  if (origen === "AUTOMATICO") {
+    return { label: "Automático", tone: "info" };
+  }
+  if (origen === "MANUAL") {
+    return { label: "Manual", tone: "neutral" };
+  }
+  return null;
+}
 
 /** Etiqueta "03 - Ciempiés" a partir del catálogo Animal. */
 export function etiquetaResultadoAnimal(
@@ -47,7 +62,12 @@ export function resumenExposicionCompacto(args: {
 
 export type ResultadoApiOk = {
   ok: true;
-  resultado: { hora: number; numero: string; nombre: string };
+  resultado: {
+    hora: number;
+    numero: string;
+    nombre: string;
+    origen?: OrigenResultadoUi;
+  };
 };
 
 export type ResultadoApiError = {
@@ -70,6 +90,19 @@ export function mensajeErrorResultado(data: ResultadoApiError): string {
   return "No se pudo guardar el resultado.";
 }
 
+/** Extrae código de error estructurado de la API de resultados. */
+export function codigoErrorResultado(data: ResultadoApiError): string | null {
+  if (
+    data.error &&
+    typeof data.error === "object" &&
+    typeof data.error.code === "string" &&
+    data.error.code.trim()
+  ) {
+    return data.error.code.trim();
+  }
+  return null;
+}
+
 export function parseResultadoApiOk(data: unknown): ResultadoApiOk | null {
   if (!data || typeof data !== "object") return null;
   const d = data as Record<string, unknown>;
@@ -84,12 +117,19 @@ export function parseResultadoApiOk(data: unknown): ResultadoApiOk | null {
   ) {
     return null;
   }
+  const origenRaw = resultado.origen;
+  const origen: OrigenResultadoUi | undefined =
+    origenRaw === "MANUAL" || origenRaw === "AUTOMATICO"
+      ? origenRaw
+      : undefined;
+
   return {
     ok: true,
     resultado: {
       hora: resultado.hora,
       numero: resultado.numero,
       nombre: resultado.nombre,
+      ...(origen ? { origen } : {}),
     },
   };
 }

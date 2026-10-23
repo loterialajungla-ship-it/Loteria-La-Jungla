@@ -3,13 +3,20 @@
  * Nunca usar DATABASE_URL / DIRECT_URL de producción.
  */
 
-export type SafeTestDbCheck = {
-  ok: true;
-  testUrl: string;
-} | {
-  ok: false;
-  reason: string;
-};
+import {
+  extractNeonEndpointId,
+  assertTestDatabaseUrlAuthorized,
+} from "@/lib/db/neon-endpoint-guard";
+
+export type SafeTestDbCheck =
+  | {
+      ok: true;
+      testUrl: string;
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
 
 function normalizeUrl(raw: string): string {
   return raw.trim().replace(/\/$/, "");
@@ -24,7 +31,8 @@ function looksLikeProduction(url: string): boolean {
 }
 
 /**
- * Valida que TEST_DATABASE_URL exista y esté aislada de prod.
+ * Valida que TEST_DATABASE_URL exista, sea el endpoint TEST autorizado
+ * y esté aislada de prod/recovery/dev-recovery (por ID de endpoint, no solo igualdad textual).
  */
 export function checkSafeTestDatabase(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
@@ -41,11 +49,26 @@ export function checkSafeTestDatabase(
   if (!/^postgres(ql)?:\/\//i.test(testRaw)) {
     return {
       ok: false,
-      reason: "TEST_DATABASE_URL debe ser una URL PostgreSQL (postgresql://...).",
+      reason:
+        "TEST_DATABASE_URL debe ser una URL PostgreSQL (protocolo postgres o postgresql).",
+    };
+  }
+
+  try {
+    assertTestDatabaseUrlAuthorized(testRaw);
+  } catch (e) {
+    return {
+      ok: false,
+      reason: e instanceof Error ? e.message : String(e),
     };
   }
 
   const testUrl = normalizeUrl(testRaw);
+  const testEp = extractNeonEndpointId(testRaw);
+  if (!testEp.ok) {
+    return { ok: false, reason: testEp.reason };
+  }
+
   const databaseUrl = env.DATABASE_URL ? normalizeUrl(env.DATABASE_URL) : "";
   const directUrl = env.DIRECT_URL ? normalizeUrl(env.DIRECT_URL) : "";
 
@@ -63,6 +86,28 @@ export function checkSafeTestDatabase(
       reason:
         "Se rechazó la ejecución: la base de datos de test no parece aislada de producción. (TEST_DATABASE_URL === DIRECT_URL)",
     };
+  }
+
+  // Colisión por endpoint ID (URLs distintas, mismo compute Neon).
+  if (databaseUrl) {
+    const dbEp = extractNeonEndpointId(databaseUrl);
+    if (dbEp.ok && dbEp.endpointId === testEp.endpointId) {
+      return {
+        ok: false,
+        reason:
+          "Se rechazó la ejecución: TEST_DATABASE_URL y DATABASE_URL comparten el mismo endpoint Neon (posible producción).",
+      };
+    }
+  }
+  if (directUrl) {
+    const dirEp = extractNeonEndpointId(directUrl);
+    if (dirEp.ok && dirEp.endpointId === testEp.endpointId) {
+      return {
+        ok: false,
+        reason:
+          "Se rechazó la ejecución: TEST_DATABASE_URL y DIRECT_URL comparten el mismo endpoint Neon (posible producción).",
+      };
+    }
   }
 
   if (looksLikeProduction(testUrl) && !/test|ci|local|dev/i.test(testUrl)) {

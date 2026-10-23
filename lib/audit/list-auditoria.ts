@@ -24,7 +24,9 @@ const ACCIONES = new Set<string>([
   "CAMBIAR_PASSWORD",
   "CREAR_RESULTADO",
   "MODIFICAR_RESULTADO",
+  "CREAR_ADMIN",
 ]);
+
 
 const ENTIDADES = new Set<string>(["TICKET", "USUARIO", "RESULTADO", "AUTH"]);
 
@@ -141,8 +143,8 @@ export async function listAuditoria(
       id: row.id,
       createdAt: row.createdAt.toISOString(),
       usuarioId: row.usuarioId,
-      usuarioNombre: row.usuario.nombre,
-      usuarioLogin: row.usuario.usuario,
+      usuarioNombre: row.usuario?.nombre ?? "Sistema",
+      usuarioLogin: row.usuario?.usuario ?? "sistema",
       accion: row.accion,
       entidad: row.entidad,
       entidadId: row.entidadId,

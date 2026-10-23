@@ -8,12 +8,17 @@ import {
   prepareTestDevEnv,
   type NetworkInterfacesLike,
 } from "@/lib/dev/test-dev-env";
+import { NEON_ENDPOINTS } from "@/lib/db/neon-endpoint-guard";
+
+const TEST_URL = `postgresql://u:secret@${NEON_ENDPOINTS.TEST}-pooler.c-6.us-east-2.aws.neon.tech/neondb`;
+const PROD_URL = `postgresql://u:p@${NEON_ENDPOINTS.PRODUCTION}-pooler.c-6.us-east-2.aws.neon.tech/neondb`;
+const PROD_DIRECT = `postgresql://u:p@${NEON_ENDPOINTS.PRODUCTION}.c-6.us-east-2.aws.neon.tech/neondb`;
 
 describe("prepareTestDevEnv (dev:test)", () => {
   it("TEST_DATABASE_URL ausente → error", () => {
     const r = prepareTestDevEnv({
-      DATABASE_URL: "postgresql://u:p@host/prod",
-      DIRECT_URL: "postgresql://u:p@host/prod",
+      DATABASE_URL: PROD_URL,
+      DIRECT_URL: PROD_DIRECT,
     });
     assert.equal(r.ok, false);
     if (!r.ok) {
@@ -23,11 +28,10 @@ describe("prepareTestDevEnv (dev:test)", () => {
   });
 
   it("TEST_DATABASE_URL igual DATABASE_URL → error", () => {
-    const url = "postgresql://u:secret@host/neondb";
     const r = prepareTestDevEnv({
-      TEST_DATABASE_URL: url,
-      DATABASE_URL: url,
-      DIRECT_URL: "postgresql://u:p@host/other",
+      TEST_DATABASE_URL: TEST_URL,
+      DATABASE_URL: TEST_URL,
+      DIRECT_URL: PROD_DIRECT,
     });
     assert.equal(r.ok, false);
     if (!r.ok) {
@@ -37,11 +41,10 @@ describe("prepareTestDevEnv (dev:test)", () => {
   });
 
   it("TEST_DATABASE_URL igual DIRECT_URL → error", () => {
-    const url = "postgresql://u:secret@host/neondb";
     const r = prepareTestDevEnv({
-      TEST_DATABASE_URL: url,
-      DATABASE_URL: "postgresql://u:p@pooler/neondb",
-      DIRECT_URL: url,
+      TEST_DATABASE_URL: TEST_URL,
+      DATABASE_URL: PROD_URL,
+      DIRECT_URL: TEST_URL,
     });
     assert.equal(r.ok, false);
     if (!r.ok) {
@@ -52,9 +55,9 @@ describe("prepareTestDevEnv (dev:test)", () => {
 
   it("TEST_DATABASE_URL segura → inyecta en hijo sin mutar padre", () => {
     const parent = {
-      TEST_DATABASE_URL: "postgresql://u:p@localhost:5432/llj_test",
-      DATABASE_URL: "postgresql://u:p@neon-pooler/neondb",
-      DIRECT_URL: "postgresql://u:p@neon/neondb",
+      TEST_DATABASE_URL: TEST_URL,
+      DATABASE_URL: PROD_URL,
+      DIRECT_URL: PROD_DIRECT,
       PATH: "/usr/bin",
     };
     const snapshotDb = parent.DATABASE_URL;
@@ -80,8 +83,8 @@ describe("prepareTestDevEnv (dev:test)", () => {
     assert.doesNotMatch(banner, /password|token|secret/i);
 
     const bad = prepareTestDevEnv({
-      TEST_DATABASE_URL: "postgresql://user:SuperSecret99@host/db",
-      DATABASE_URL: "postgresql://user:SuperSecret99@host/db",
+      TEST_DATABASE_URL: `postgresql://user:SuperSecret99@${NEON_ENDPOINTS.TEST}.c-6.us-east-2.aws.neon.tech/db`,
+      DATABASE_URL: `postgresql://user:SuperSecret99@${NEON_ENDPOINTS.TEST}.c-6.us-east-2.aws.neon.tech/db`,
     });
     assert.equal(bad.ok, false);
     if (!bad.ok) {
