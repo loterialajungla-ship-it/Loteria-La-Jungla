@@ -90,7 +90,8 @@ function makeFakeDb(
       return rows.get(rowKey(fecha, hora)) ?? null;
     },
     animal: {
-      async findMany(_args: { select: { numero: true; nombre: true } }) {
+      async findMany(args: { select: { numero: true; nombre: true } }) {
+        void args;
         return catalog.map((a) => ({ numero: a.numero, nombre: a.nombre }));
       },
     },
@@ -212,7 +213,7 @@ function makeFakeDb(
         return { id: `a-${audits.length}` };
       },
     },
-    async $transaction<T>(fn: (tx: typeof api) => Promise<T>): Promise<T> {
+    async $transaction<T>(fn: (tx: object) => Promise<T>): Promise<T> {
       const snap = snapshot();
       try {
         return await fn(api);

@@ -18,37 +18,15 @@ import {
   ResultadoCorrectionValidationError,
   ResultadoDomainError,
   type CorrectPublishedResultArgs,
+  type SaveManualDb,
   correctPublishedResult,
   createManualResult,
 } from "@/lib/resultados/save-manual";
-import type { PrismaClient } from "@prisma/client";
-
-type SaveManualDb = Pick<
-  PrismaClient,
-  "resultado" | "auditoria" | "$transaction"
->;
-
-type AnimalLookupDb = {
-  animal: {
-    findUnique: (args: {
-      where: { numero: string };
-    }) => Promise<{ numero: string; nombre: string } | null>;
-    findMany: (args: {
-      select: { numero: true; nombre: true };
-    }) => Promise<{ numero: string; nombre: string }[]>;
-  };
-  resultado: {
-    findUnique: (args: {
-      where: { fecha_hora: { fecha: Date; hora: number } };
-      select: { numero: true };
-    }) => Promise<{ numero: string } | null>;
-  };
-};
 
 export type PostAdminResultadosDeps = {
   requireAdmin: () => Promise<AdminActor>;
   /** Lecturas de animal/resultado existentes + cliente para create/correct. */
-  prisma: SaveManualDb & AnimalLookupDb;
+  prisma: SaveManualDb;
   createManualResult: typeof createManualResult;
   correctPublishedResult: typeof correctPublishedResult;
 };

@@ -296,7 +296,7 @@ describe("assertPrismaSeedAllowed", () => {
   it("acepta TEST con opt-in explícito", () => {
     const id = assertPrismaSeedAllowed({
       PRISMA_SEED_TARGET: "test",
-      DATABASE_URL: neonUrl(NEON_ENDPOINTS.TEST, true),
+      DATABASE_URL: neonUrl(NEON_ENDPOINTS.TEST, { pooler: true }),
       DIRECT_URL: neonUrl(NEON_ENDPOINTS.TEST),
     });
     assert.equal(id, NEON_ENDPOINTS.TEST);

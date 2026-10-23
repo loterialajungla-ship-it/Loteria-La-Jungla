@@ -3,7 +3,7 @@
  * Sin PrismaClient en import; dependencias inyectables (tests con fakes).
  */
 import { Prisma } from "@prisma/client";
-import type { AccionAuditoria } from "@prisma/client";
+import type { AccionAuditoria, EntidadAuditoria } from "@prisma/client";
 import { recordAuditEvent } from "@/lib/audit/audit";
 import {
   assertPasswordPolicy,
@@ -78,7 +78,7 @@ export type BootstrapAdminProductionDb = {
       data: {
         usuarioId: string | null;
         accion: AccionAuditoria;
-        entidad: "USUARIO";
+        entidad: EntidadAuditoria;
         entidadId: string;
         detalle: string | null;
       };

@@ -53,7 +53,10 @@ async function main(): Promise<void> {
 
   const prisma = new PrismaClient();
   try {
-    const result = await runBootstrapAdminProduction(prisma, credentials);
+    const result = await runBootstrapAdminProduction(
+      prisma as unknown as Parameters<typeof runBootstrapAdminProduction>[0],
+      credentials,
+    );
     if (result.status === "already_exists") {
       console.log(
         `Ya existe un ADMIN (usuario="${result.usuario}"). Bootstrap omitido. endpoint=${endpointId} target=${PRODUCTION_BOOTSTRAP_TARGET}.`,

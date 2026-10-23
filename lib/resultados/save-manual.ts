@@ -7,7 +7,7 @@ import { MOTIVO_CORRECCION_MAX } from "@/lib/resultados/correction-constants";
 
 export { MOTIVO_CORRECCION_MAX } from "@/lib/resultados/correction-constants";
 
-type SaveManualDb = Pick<
+export type SaveManualDb = Pick<
   PrismaClient,
   "resultado" | "auditoria" | "animal" | "$transaction"
 >;

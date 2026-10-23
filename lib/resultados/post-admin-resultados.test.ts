@@ -110,7 +110,8 @@ function makeFakePrisma(
       async findUnique(args: { where: { numero: string } }) {
         return animales.get(args.where.numero) ?? null;
       },
-      async findMany(_args: { select: { numero: true; nombre: true } }) {
+      async findMany(args: { select: { numero: true; nombre: true } }) {
+        void args;
         return [...animales.values()].map((a) => ({
           numero: a.numero,
           nombre: a.nombre,
@@ -211,7 +212,7 @@ function makeFakePrisma(
         return { id: `a-${audits.length}` };
       },
     },
-    async $transaction<T>(fn: (tx: typeof api) => Promise<T>): Promise<T> {
+    async $transaction<T>(fn: (tx: object) => Promise<T>): Promise<T> {
       const snap = snapshot();
       try {
         return await fn(api);

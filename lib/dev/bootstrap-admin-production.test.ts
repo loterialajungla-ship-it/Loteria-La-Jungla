@@ -35,7 +35,7 @@ function makeFakeDb(seed: User[] = []) {
   };
   let failAudit = false;
   /** Fila de otra TX: sobrevive al rollback del fake (como en Postgres). */
-  let concurrentUsers: User[] = [];
+  const concurrentUsers: User[] = [];
   let raceOnCreate: User | null = null;
 
   function allUsers(): User[] {
@@ -136,7 +136,7 @@ function makeFakeDb(seed: User[] = []) {
         data: {
           usuarioId: string | null;
           accion: string;
-          entidad: "USUARIO";
+          entidad: string;
           entidadId: string;
           detalle: string | null;
         };

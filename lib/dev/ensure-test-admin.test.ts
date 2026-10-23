@@ -17,7 +17,7 @@ import { assertSafeTestDatabase } from "@/lib/tickets/integration/safe-test-db";
 
 const SECRET = "ensure-test-admin-secret-never-leak";
 
-function neonTestUrl(endpoint = NEON_ENDPOINTS.TEST): string {
+function neonTestUrl(endpoint: string = NEON_ENDPOINTS.TEST): string {
   return `postgresql://u:${SECRET}@${endpoint}-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require`;
 }
 

@@ -60,7 +60,7 @@ function makeFakeDb(
    * Fila escrita por otra TX concurrente: sobrevive al rollback del fake
    * (como en Postgres real tras P2002).
    */
-  let concurrentByKey = new Map<string, Row>();
+  const concurrentByKey = new Map<string, Row>();
   let raceNumero: string | null = null;
 
   function snapshot() {
@@ -200,7 +200,7 @@ function makeFakeDb(
         return { id: `a-${audits.length}` };
       },
     },
-    async $transaction<T>(fn: (tx: typeof api) => Promise<T>): Promise<T> {
+    async $transaction<T>(fn: (tx: object) => Promise<T>): Promise<T> {
       const snap = snapshot();
       try {
         return await fn(api);

@@ -105,6 +105,8 @@ Este runbook **no** ejecuta backups automáticamente.
 3. `20261001002140_add_users_and_sessions`  
 4. `20261002012244_add_ticket_idempotency`  
 5. `20261002160000_add_auditoria`  
+6. `20261017220000_resultado_origen_auditoria_sistema`  
+7. `20261023010000_accion_auditoria_crear_admin`  
 
 ### Comando correcto (producción)
 
