@@ -43,10 +43,12 @@ Públicas sin cambio: `/ticket/[codigo]`, `/api/tickets/public/[codigo]`.
 - `ADMIN_PASSWORD`
 - `ADMIN_SESSION_SECRET`
 
-### Bootstrap (script aislado; no autentican)
+### Bootstrap (scripts aislados; no autentican el runtime)
 
 - `ADMIN_BOOTSTRAP_USER` (default `admin`)
-- `ADMIN_BOOTSTRAP_PASSWORD` (requerida para `npm run bootstrap:admin`)
+- `ADMIN_BOOTSTRAP_PASSWORD` (requerida al ejecutar un script bootstrap)
+
+**Nota (producción vs recuperación):** `npm run bootstrap:admin` es el procedimiento histórico de **dev-from-recovery** / desarrollo recuperado y **no** debe usarse para crear el administrador inicial de **producción**. El procedimiento específico de producción es `npm run bootstrap:admin:production`, siguiendo `docs/production-deployment-runbook.md` §6.1 (migración aplicada, dual opt-in y autorización humana explícita). Tras el bootstrap de prod, retirar las variables temporales de bootstrap; no confundirlas con secretos permanentes como `CRON_SECRET`.
 
 ### Auth runtime
 
@@ -54,12 +56,16 @@ Públicas sin cambio: `/ticket/[codigo]`, `/api/tickets/public/[codigo]`.
 
 ---
 
-## Pruebas realizadas
+## Pruebas (evidencia)
+
+**Histórico (retiro / cierre ~2026-10-02):**
 
 - Unitarios: login/roles + tests “legacy no autentica”
-- Integration: tickets / concurrencia / anulación
-- Acceptance: bootstrap, sesiones, permisos, tickets, liquidación, desactivación
+- Integration: tickets / concurrencia / anulación (sobre `TEST_DATABASE_URL`)
+- Acceptance: bootstrap, sesiones, permisos, tickets, liquidación, desactivación (TEST)
 - Búsqueda global: sin imports ejecutables a `isAdminSession` / `admin_session` / `ADMIN_SESSION_SECRET` / `ADMIN_PASSWORD` en runtime
+
+**Fase posterior (PROMPT 151, árbol de trabajo local):** unitarios reportados **385** aprobadas / 0 fallidas / 0 omitidas / 0 canceladas. Esa cifra **no** es PASS de un commit limpio ni verificación independiente; **no** se reejecutaron integration ni acceptance en esa fase.
 
 ---
 

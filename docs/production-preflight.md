@@ -27,13 +27,13 @@
 
 | Suite | Comando | Resultado |
 | --- | --- | --- |
-| Unit | `npm test` | PASS — 219 |
-| Typecheck | `npx tsc --noEmit` | PASS |
-| Lint | `npm run lint` | PASS |
-| Integration | `npm run test:integration` | PASS (sobre `TEST_DATABASE_URL`) |
-| Acceptance | `npm run test:acceptance` | PASS — 26 (sobre `TEST_DATABASE_URL`) |
+| Unit | `npm test` | **Histórico (cierre 2026-10-02):** PASS — 219. **Reportado PROMPT 151 (árbol de trabajo local, no commit limpio):** 385 aprobadas, 0 fallidas, 0 omitidas, 0 canceladas. No es verificación independiente ni PASS de un clone limpio. |
+| Typecheck | `npx tsc --noEmit` | Histórico PASS (2026-10-02); **no revalidado** en la fase post-385 |
+| Lint | `npm run lint` | Histórico PASS (2026-10-02); **no revalidado** en la fase post-385 |
+| Integration | `npm run test:integration` | Histórico PASS sobre `TEST_DATABASE_URL` (2026-10-02). **No ejecutado / no afirmado PASS** en la fase post-385 |
+| Acceptance | `npm run test:acceptance` | Histórico PASS — 26 sobre `TEST_DATABASE_URL` (2026-10-02). **No ejecutado / no afirmado PASS** en la fase post-385 |
 
-Integración/aceptación **no** usan la DB de producción; guard `safe-test-db` exige `TEST_DATABASE_URL` aislada.
+Integración/aceptación **deben** usar solo DB de prueba aislada (`TEST_DATABASE_URL` + guards); **nunca** la DB de producción. No se recomienda ejecutarlas en esta fase documental.
 
 ---
 
@@ -46,19 +46,31 @@ Integración/aceptación **no** usan la DB de producción; guard `safe-test-db` 
 | `DATABASE_URL` | Prisma (pooled) | Obligatoria |
 | `DIRECT_URL` | Prisma `directUrl` (migraciones / Neon) | Obligatoria según `schema.prisma` |
 
-### Runtime de producción (opcionales)
+### Runtime de producción (opcionales / cron)
 
-| Variable | Uso | Default |
+| Variable | Uso | Default / notas |
 | --- | --- | --- |
 | `AUTH_SESSION_HOURS` | Duración cookie `lj_session` | `12` (máx. 168) |
 | `NODE_ENV` | `production` → cookie `secure` | Lo fija el host |
+| `CRON_SECRET` | Auth del cron `POST/GET` `/api/cron/resultados-automaticos` (`Authorization: Bearer …` o `x-cron-secret`) | **Obligatoria para que el cron acepte requests.** Si falta o está vacía, `authorizeCronRequest` responde **fail-closed** (`false`) — el endpoint no autoriza. Esto describe el código local; **no** implica que el cron esté activo ni verificado en producción. |
 
 ### Solo operaciones / bootstrap (no auth runtime)
 
 | Variable | Uso |
 | --- | --- |
 | `ADMIN_BOOTSTRAP_USER` | Opcional; default `admin` |
-| `ADMIN_BOOTSTRAP_PASSWORD` | Obligatoria **solo** al ejecutar `npm run bootstrap:admin` |
+| `ADMIN_BOOTSTRAP_PASSWORD` | Obligatoria al ejecutar un script bootstrap |
+| `BOOTSTRAP_TARGET` | `dev-from-recovery` **o** `production` según el comando |
+| `CONFIRM_PRODUCTION_BOOTSTRAP` | Solo prod: frase `I_UNDERSTAND_THIS_WRITES_PRODUCTION` |
+
+**Comandos (separados; no intercambiables):**
+
+| Comando | Destino | Condiciones |
+| --- | --- | --- |
+| `npm run bootstrap:admin` | Solo **dev-from-recovery** | `BOOTSTRAP_TARGET=dev-from-recovery` + guard del endpoint de recuperación |
+| `npm run bootstrap:admin:production` | Solo **producción** | Dual opt-in (`BOOTSTRAP_TARGET=production` + `CONFIRM_PRODUCTION_BOOTSTRAP=I_UNDERSTAND_THIS_WRITES_PRODUCTION`) + allowlist PRODUCTION; tras backup + `migrate deploy` cuando corresponda |
+
+Retirar variables temporales tras un bootstrap exitoso. **Este preflight no recomienda ejecutar migraciones ni bootstrap ahora**; requieren autorización humana explícita y no se dan por hechos.
 
 ### Solo test / desarrollo local
 
@@ -100,10 +112,10 @@ En TEST: los runners ejecutan `prisma migrate deploy` sobre `TEST_DATABASE_URL` 
 2. En entorno con `DATABASE_URL` + `DIRECT_URL` de **producción**:  
    `npx prisma migrate deploy`  
 3. Deploy de la app (`npm run build` / Vercel).  
-4. Si no hay ADMIN: `ADMIN_BOOTSTRAP_*` + `npm run bootstrap:admin` (una vez).  
+4. Si no hay ADMIN en **producción**: dual opt-in + `npm run bootstrap:admin:production` (una vez; **no** `bootstrap:admin`).  
 
 **No** usar `prisma migrate reset` en producción.  
-**No** ejecutar `seed:manual-test` contra producción.
+**No** ejecutar `seed:manual-test` ni `ensure:test-admin` contra producción.
 
 ---
 
@@ -233,7 +245,9 @@ Ver §7. Scripts CLI pueden usar `console.log` informativo sin secretos. Runtime
 - [ ] Backup verificable antes de migrar
 - [ ] `npx prisma migrate deploy` en prod
 - [ ] Deploy app (`build` / Vercel)
-- [ ] ADMIN creado (`bootstrap:admin` o existente)
+- [ ] ADMIN creado (`bootstrap:admin:production` o existente; no `bootstrap:admin` ni seeds TEST)
+- [ ] `CRON_SECRET` configurado en Production (cron resultados)
+- [ ] Variables temporales de bootstrap retiradas tras el éxito
 - [ ] VENDEDOR creado desde admin
 - [ ] Login `/login` probado
 - [ ] `/venta` probado
@@ -319,10 +333,12 @@ No se actualizaron versiones en este preflight.
 
 - Build: `prisma generate && next build`  
 - Postinstall: `prisma generate`  
-- Sin `vercel.json` custom en el repo  
+- El repositorio **incluye** `vercel.json` con cron Vercel: ruta `/api/cron/resultados-automaticos`, schedule `*/5 * * * *`. Revisar ese archivo junto con la ruta del endpoint y la presencia de `CRON_SECRET` en el entorno Production **antes** de asumir automatización.  
+- **No verificado en producción:** que el cron esté desplegado, programado o ejecutándose con éxito. La presencia de `vercel.json` en el repo ≠ cron productivo operativo.  
+- Sin `CRON_SECRET` (o vacío): el código rechaza la petición (**fail-closed**); no hay bypass.  
 - Pipeline **no** ejecuta seeds ni suites de integración/aceptación  
 
-Migraciones: aplicar manualmente / job de release con `prisma migrate deploy` **antes o en el release**, no dejar datos de test en prod.
+Migraciones: aplicar manualmente / job de release con `prisma migrate deploy` **antes o en el release**, solo con autorización humana; no dejar datos de test en prod. **No** se recomienda ejecutar migraciones en esta fase documental.
 
 ---
 
@@ -335,4 +351,10 @@ Ninguna de código: no se detectó bloqueador de producción en runtime.
 
 ## 22. Estado final
 
-**V1 apta para despliegue a producción** tras completar el checklist operacional (§13) con HTTPS, migraciones y bootstrap ADMIN, sin mezclar `TEST_DATABASE_URL` en el runtime.
+**Implementado en código (local):** auth moderna, tickets, resultados (incl. publicación canónica / cron autenticado), bootstrap prod con dual opt-in, guard Neon, runner unitario aislado.  
+
+**Unitarios:** cifra reportada PROMPT 151 = 385 PASS en árbol de trabajo local (ver §2); no sustituye verificación en commit limpio ni en CI.  
+
+**Pendiente / no demostrado aquí:** despliegue productivo, cron operativo en Vercel, migraciones aplicadas en prod, bootstrap ADMIN en prod, integración/aceptación reejecutadas, smoke UI prod.  
+
+**Criterio operativo:** completar el checklist (§13) con HTTPS, migraciones y bootstrap ADMIN **solo** bajo autorización humana explícita, sin mezclar `TEST_DATABASE_URL` en el runtime.

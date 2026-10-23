@@ -50,9 +50,14 @@ Compatibilidad: `/admin/login` → **308** → `/login`.
 | REPORTES | funciona |
 | AUDITORÍA | funciona |
 
-Suites (cierre 2026-10-02): unit **219 PASS**; integration PASS; acceptance **26 PASS**; `tsc --noEmit` PASS; lint PASS.
+Suites:
 
-Smoke: PNG+QR verificados en PC y móvil LAN; a11y formal pendiente.
+| Origen | Unit | Integration | Acceptance | tsc / lint |
+| --- | --- | --- | --- | --- |
+| Cierre histórico 2026-10-02 | **219 PASS** | PASS (TEST) | **26 PASS** (TEST) | PASS |
+| Reportado PROMPT 151 (árbol de trabajo local; **no** commit limpio ni CI independiente) | **385** aprobadas, 0 fallidas, 0 omitidas, 0 canceladas | **No ejecutado** en esa fase | **No ejecutado** en esa fase | **No revalidado** en esa fase |
+
+Smoke (histórico LAN): PNG+QR en PC y móvil; a11y formal **pendiente**. Despliegue productivo, cron en Vercel y DB de producción: **no verificados**.
 
 ---
 
@@ -60,12 +65,15 @@ Smoke: PNG+QR verificados en PC y móvil LAN; a11y formal pendiente.
 
 ### BLOQUEANTE PARA PRODUCCIÓN
 
-Ninguno funcional detectado en código vs reglas V1, **si**:
+Ningún defecto funcional detectado en código vs reglas V1 **como bloqueador de diseño**, **siempre que** se complete (aún **pendiente** de ejecución autorizada; no afirmar que ya ocurrió):
 
 - deploy con **HTTPS**;
 - `DATABASE_URL` / `DIRECT_URL` de producción (nunca `TEST_DATABASE_URL` como runtime prod);
-- bootstrap ADMIN hecho;
+- `CRON_SECRET` en Production (sin él el cron es **fail-closed**; ver `docs/production-preflight.md` §20 — **no** implica cron ya operativo);
+- primer ADMIN de producción provisionado con `npm run bootstrap:admin:production` (o ADMIN ya existente); **no** usar `npm run bootstrap:admin` contra producción (ese comando es solo **dev-from-recovery**);
 - secretos legacy `ADMIN_PASSWORD` / `ADMIN_SESSION_SECRET` no usados (runtime no los lee).
+
+**No** ejecutar migraciones ni bootstrap desde esta documentación; requieren autorización humana explícita.
 
 ### NO BLOQUEANTE
 
@@ -129,19 +137,29 @@ Ninguno funcional detectado en código vs reglas V1, **si**:
 
 ## 7. Checklist para producción
 
+Orden operativo alineado con `docs/production-deployment-runbook.md` §6.1 (ningún ítem implica que ya se haya ejecutado):
+
 - [ ] HTTPS obligatorio
 - [ ] `DATABASE_URL` + `DIRECT_URL` producción (pooled + direct Neon si aplica)
 - [ ] **No** requerir `TEST_DATABASE_URL` en runtime prod
-- [ ] Migraciones Prisma aplicadas
-- [ ] `npm run bootstrap:admin` una vez (o ADMIN existente)
+- [ ] `CRON_SECRET` en Production (cron `/api/cron/resultados-automaticos`; sin secreto = fail-closed). Revisar también `vercel.json` (schedule) — **no** afirmar que el cron productivo ya funciona
+- [ ] Backup verificable **antes** de migrar (pendiente de ejecución autorizada)
+- [ ] Regeneración/build del código necesario (`prisma generate` vía build/postinstall)
+- [ ] Despliegue del código cuando corresponda
+- [ ] Migraciones Prisma aplicadas en producción (incl. enum `CREAR_ADMIN` si pendiente)
+- [ ] Verificar el enum / schema en el destino tras migrate
+- [ ] Primer ADMIN: `npm run bootstrap:admin:production` con dual opt-in y autorización humana explícita (**o** ADMIN ya existente). **No** `npm run bootstrap:admin` en prod (solo **dev-from-recovery**)
+- [ ] Comprobar acceso `/login` → ADMIN `/admin`
+- [ ] Retirar variables temporales: `BOOTSTRAP_TARGET`, `CONFIRM_PRODUCTION_BOOTSTRAP`, `ADMIN_BOOTSTRAP_*`
 - [ ] Revisar que no queden secretos en logs/UI
 - [ ] Cookie `lj_session` httpOnly + SameSite=lax + secure
-- [ ] Smoke login `/login` → ADMIN `/admin`, VENDEDOR `/venta`
-- [ ] Crear ticket, PNG+QR, consulta pública, resultado, exposición, anulación, reportes
-- [ ] Backup / retención DB según operación
+- [ ] Smoke login ADMIN/VENDEDOR; ticket, PNG+QR, consulta pública, resultado, exposición, anulación, reportes
+- [ ] Política de retención DB según operación
 
-Variables **obligatorias prod:** `DATABASE_URL`, `DIRECT_URL` (si el cliente Prisma las usa).  
-Variables **solo test/dev:** `TEST_DATABASE_URL`, `MANUAL_TEST_*`.
+Variables **obligatorias prod:** `DATABASE_URL`, `DIRECT_URL` (si el cliente Prisma las usa); `CRON_SECRET` para el cron.  
+Variables **solo bootstrap prod (temporales):** `BOOTSTRAP_TARGET=production`, `CONFIRM_PRODUCTION_BOOTSTRAP`, `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASSWORD`.  
+Variables **solo test/dev:** `TEST_DATABASE_URL`, `MANUAL_TEST_*`.  
+Comando **dev-from-recovery** (no prod): `npm run bootstrap:admin`.
 
 ---
 

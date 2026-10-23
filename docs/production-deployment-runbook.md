@@ -28,7 +28,7 @@ build       → prisma generate && next build
 
 - `binaryTargets` Prisma incluyen `native` y `rhel-openssl-3.0.x` (adecuado a Vercel Linux).
 - `next.config.mjs` no añade pasos de seed/test.
-- **No** se ejecutan en build: `seed:manual-test`, `test:integration`, `test:acceptance`, `dev:test`, `dev:test:lan`, `bootstrap:admin`.
+- **No** se ejecutan en build / postinstall / start: `seed:manual-test`, `test:integration`, `test:acceptance`, `dev:test`, `dev:test:lan`, `bootstrap:admin`, `bootstrap:admin:production`.
 
 Variables **mínimas en el entorno de build/runtime** de Production:
 
@@ -47,6 +47,7 @@ Variables **mínimas en el entorno de build/runtime** de Production:
 | --- | --- |
 | `DATABASE_URL` | Prisma → conexiones pooled (Neon “pooled”) |
 | `DIRECT_URL` | Prisma `directUrl` → migraciones / conexión directa Neon |
+| `CRON_SECRET` | Auth del cron `/api/cron/resultados-automaticos` (`Authorization: Bearer …` o `x-cron-secret`). Si falta o está vacío, el código es **fail-closed** (`authorizeCronRequest` → no autoriza). **Obligatoria** para que el job programado pueda ejecutarse; no implica que el cron ya esté verificado en producción. |
 
 ### Runtime (opcional)
 
@@ -136,7 +137,7 @@ No borrar tablas, no resetear schema, no ejecutar seeds de test.
 
 | Entorno | Uso | Variables |
 | --- | --- | --- |
-| **Production** | Dominio real | `DATABASE_URL`, `DIRECT_URL`, opcional `AUTH_SESSION_HOURS` de **prod** |
+| **Production** | Dominio real | `DATABASE_URL`, `DIRECT_URL`, `CRON_SECRET`, opcional `AUTH_SESSION_HOURS` de **prod** |
 | **Preview** | PRs / pruebas | Preferible DB **aislada** (branch Neon); **no** copiar secretos de prod a ciegas; no usar datos reales de clientes |
 | **Development** | Local | `.env` local; puede tener TEST; **no** es Production |
 
@@ -150,6 +151,16 @@ No poner `TEST_DATABASE_URL` como dependencia del runtime de Production.
 - Install: `npm install` (dispara `postinstall` → `prisma generate`)  
 - Output: estándar Next (App Router)
 
+### Cron (`vercel.json`)
+
+El repositorio incluye `vercel.json` con un cron Vercel:
+
+- Ruta: `/api/cron/resultados-automaticos`  
+- Schedule: `*/5 * * * *`  
+
+Revisar ese archivo y la ruta del endpoint **junto con** `CRON_SECRET` en Production antes de asumir automatización.  
+**Pendiente de evidencia:** que el cron esté desplegado y funcionando en producción. Configuración en repo ≠ verificación operativa.
+
 ### Preview
 
 Recomendado desplegar **Preview** primero si hay una DB de preview aislada.  
@@ -159,28 +170,55 @@ Limitaciones: Preview **no** sustituye pruebas contra la DB real de producción;
 
 ## 6. Bootstrap ADMIN
 
+Hay **dos** comandos distintos. No confundirlos.
+
+| Comando | Destino permitido | Uso |
+| --- | --- | --- |
+| `npm run bootstrap:admin` | Solo **dev-from-recovery** (`BOOTSTRAP_TARGET=dev-from-recovery`) | Desarrollo recuperado |
+| `npm run bootstrap:admin:production` | Solo **producción** (dual opt-in) | Primer ADMIN en prod |
+
+### 6.1 Producción — `bootstrap:admin:production`
+
 Cuando la DB de producción **aún no** tiene un Usuario ADMIN:
 
-1. Configurar temporalmente (local o Vercel env / shell):  
-   - `DATABASE_URL` / `DIRECT_URL` de prod  
-   - `ADMIN_BOOTSTRAP_USER`  
-   - `ADMIN_BOOTSTRAP_PASSWORD`  
-2. Ejecutar:
+**Orden obligatorio:**
+
+1. Backup verificable de Neon/Postgres prod.  
+2. `npx prisma migrate deploy` en prod (incluye enum `CREAR_ADMIN` si pendiente).  
+3. Verificar que el schema aplicado incluye la acción de auditoría necesaria.  
+4. Solo entonces, con autorización explícita, ejecutar el bootstrap de producción.
+
+Variables temporales (shell / vault; **retirar tras éxito**):
+
+- `BOOTSTRAP_TARGET=production`  
+- `CONFIRM_PRODUCTION_BOOTSTRAP=I_UNDERSTAND_THIS_WRITES_PRODUCTION`  
+- `DATABASE_URL` / `DIRECT_URL` de **producción** (mismo endpoint allowlisted)  
+- `ADMIN_BOOTSTRAP_USER` (opcional; default `admin`)  
+- `ADMIN_BOOTSTRAP_PASSWORD`
 
 ```bash
-npm run bootstrap:admin
+npm run bootstrap:admin:production
 ```
 
-Comportamiento del script:
+Comportamiento:
 
-- Hashea la contraseña (bcrypt); **no** imprime password ni hash.  
-- Si ya existe un ADMIN, **no** crea otro.  
-- No usa `ADMIN_PASSWORD` / `ADMIN_SESSION_SECRET`.
+- Dual opt-in + allowlist del endpoint PRODUCTION; rechaza TEST, recovery y dev-recovery.  
+- Hashea la contraseña (bcrypt); **no** imprime password ni hash ni URLs.  
+- Si ya existe un ADMIN → no-op (no cambia contraseñas).  
+- Create + auditoría `CREAR_ADMIN` (`usuarioId` null) en la misma TX.  
+- No crea sesión/`lj_session` (usar `/login` después).
+
+**No** usar `npm run bootstrap:admin` contra producción (ese script solo acepta dev-from-recovery).  
+**Nunca** `seed:manual-test` ni `ensure:test-admin` en producción.
 
 Después del primer ADMIN:
 
 - Crear vendedores desde `/admin/usuarios`.  
-- Retirar o rotar `ADMIN_BOOTSTRAP_*` del entorno según política de secretos.
+- Retirar `ADMIN_BOOTSTRAP_*`, `CONFIRM_PRODUCTION_BOOTSTRAP` y `BOOTSTRAP_TARGET` del entorno.
+
+### 6.2 Dev-from-recovery — `bootstrap:admin`
+
+Solo con `BOOTSTRAP_TARGET=dev-from-recovery` y URLs del endpoint de desarrollo recuperado. Ver cabecera de `scripts/bootstrap-admin.ts`.
 
 ---
 
@@ -232,10 +270,10 @@ Justificación: Vercel construye la app con Prisma Client, pero **`migrate deplo
 
 1. **Backup** verificable de Neon/Postgres prod.  
 2. Confirmar **rama/commit** a desplegar.  
-3. Configurar variables en Vercel **Production** (`DATABASE_URL`, `DIRECT_URL`, opcional `AUTH_SESSION_HOURS`).  
+3. Configurar variables en Vercel **Production** (`DATABASE_URL`, `DIRECT_URL`, `CRON_SECRET`, opcional `AUTH_SESSION_HOURS`). Revisar `vercel.json` (cron) — no afirmar que el cron productivo ya corre.  
 4. Aplicar migraciones a prod: `npx prisma migrate deploy` (con URLs de prod; desde CI/local controlado).  
 5. **Deploy** Production en Vercel (build = `prisma generate && next build`).  
-6. Crear/verificar ADMIN: `npm run bootstrap:admin` si no existe.  
+6. Crear/verificar ADMIN: `npm run bootstrap:admin:production` si no existe (nunca `bootstrap:admin` ni seeds de TEST).  
 7. Probar `/login` (ADMIN → `/admin`).  
 8. Crear VENDEDOR desde admin; probar login VENDEDOR → `/venta`.  
 9. Ticket de prueba controlado (importe mínimo / hora abierta).  
@@ -343,6 +381,7 @@ Tras comprobar login nuevo, sesiones y roles en Production:
 
 - [ ] HTTPS activo  
 - [ ] Dominio correcto  
+- [ ] `CRON_SECRET` en Production (fail-closed si falta; revisar `vercel.json` + ruta del cron — no afirmar éxito productivo sin evidencia)  
 - [ ] `/login` OK  
 - [ ] ADMIN OK  
 - [ ] VENDEDOR OK  
@@ -367,15 +406,17 @@ Tras comprobar login nuevo, sesiones y roles en Production:
 | Acción | Comando |
 | --- | --- |
 | Build local | `npm run build` |
-| Unit | `npm test` |
-| Typecheck | `npx tsc --noEmit` |
-| Lint | `npm run lint` |
-| Migrar **prod** (cuando toque) | `npx prisma migrate deploy` |
-| Primer ADMIN **prod** (cuando toque) | `npm run bootstrap:admin` |
-| Integration (solo TEST) | `npm run test:integration` |
-| Acceptance (solo TEST) | `npm run test:acceptance` |
+| Unit | `npm test` — histórico cierre 219 PASS; reportado PROMPT 151 (árbol local): 385 / 0 / 0 / 0. No afirmar PASS de integration/acceptance en la fase post-385 |
+| Typecheck | `npx tsc --noEmit` (histórico; no revalidado post-385) |
+| Lint | `npm run lint` (histórico; no revalidado post-385) |
+| Migrar **prod** (solo con autorización humana; **no ahora** desde docs) | `npx prisma migrate deploy` |
+| Primer ADMIN **prod** (solo con dual opt-in + autorización; **no ahora** desde docs) | `npm run bootstrap:admin:production` |
+| Primer ADMIN **dev-recovery** | `npm run bootstrap:admin` |
+| Integration (solo TEST allowlisted; no afirmado PASS post-385) | `npm run test:integration` |
+| Acceptance (solo TEST allowlisted; no afirmado PASS post-385) | `npm run test:acceptance` |
 
-**Nunca** en producción: `seed:manual-test`, `dev:test`, `dev:test:lan`, `migrate reset`, integration/acceptance apuntando a prod.
+**Nunca** en producción: `seed:manual-test`, `dev:test`, `dev:test:lan`, `migrate reset`, integration/acceptance apuntando a prod.  
+**Este runbook describe procedimientos; no documenta que migraciones, bootstrap o deploy se hayan ejecutado.**
 
 ---
 

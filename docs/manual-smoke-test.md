@@ -12,13 +12,13 @@
 
 | Suite | Comando | Resultado |
 | --- | --- | --- |
-| Prisma schema | `npx prisma validate` | PASS |
-| Prisma client | `npx prisma generate` | PASS |
-| Typecheck | `npx tsc --noEmit` | PASS |
-| Lint | `npm run lint` | PASS |
-| Unit | `npm test` | PASS — 199 tests |
-| Integration | `npm run test:integration` | PASS — tickets + passwords + reportes + auditoría (sobre `TEST_DATABASE_URL`) |
-| Acceptance | `npm run test:acceptance` | PASS — 26 tests (sobre `TEST_DATABASE_URL`) |
+| Prisma schema | `npx prisma validate` | Histórico PASS (2026-10-02); **no revalidado** en la fase post-385 |
+| Prisma client | `npx prisma generate` | Histórico PASS (2026-10-02); **no revalidado** en la fase post-385 |
+| Typecheck | `npx tsc --noEmit` | Histórico PASS (2026-10-02); **no revalidado** en la fase post-385 |
+| Lint | `npm run lint` | Histórico PASS (2026-10-02); **no revalidado** en la fase post-385 |
+| Unit | `npm test` | **Histórico (cierre / smoke 2026-10-02):** PASS — 199. **Reportado PROMPT 151 (árbol de trabajo local, no commit limpio):** 385 aprobadas, 0 fallidas, 0 omitidas, 0 canceladas. No es verificación independiente. |
+| Integration | `npm run test:integration` | Histórico PASS sobre `TEST_DATABASE_URL` (2026-10-02: tickets, passwords, reportes, auditoría). **No ejecutado / no afirmado PASS** en la fase post-385 |
+| Acceptance | `npm run test:acceptance` | Histórico PASS — 26 sobre `TEST_DATABASE_URL` (2026-10-02). **No ejecutado / no afirmado PASS** en la fase post-385 |
 
 ---
 
@@ -30,7 +30,7 @@
    - creación de tickets/vendedores vía UI o API apuntando a producción;
    - pruebas destructivas en la DB de aplicación.
 
-2. **Validación funcional de negocio:** cubierta por `test:integration` + `test:acceptance` contra `TEST_DATABASE_URL` aislada (guard `safe-test-db`).
+2. **Validación funcional de negocio (histórico 2026-10-02):** cubierta entonces por `test:integration` + `test:acceptance` contra `TEST_DATABASE_URL` aislada (guard `safe-test-db`). En la fase documental post-385 **no** se reejecutaron esas suites; no se afirman PASS actuales.
 
 3. **PNG visual / QR escaneado / responsive / a11y:**  
    - **PNG + QR en dispositivo (PC + móvil LAN):** verificados posteriormente (2026-10-02) con `dev:test:lan` — PNG completo con QR legible tras fix de captura móvil.  
@@ -45,9 +45,9 @@
 
 Leyenda:
 
-- **PASS (auto):** demostrado por unit / integration / acceptance.
+- **PASS (auto):** evidencia **histórica** (cierre 2026-10-02) vía unit / integration / acceptance de esa fecha — **no** revalidada en la fase post-385 salvo la cifra unitaria reportada en PROMPT 151 (§1).
 - **PASS (código):** revisado en implementación + tests unitarios de UI helpers.
-- **MANUAL PENDING:** requiere navegador/dispositivo; no ejecutado aquí por seguridad de entorno.
+- **MANUAL PENDING:** requiere navegador/dispositivo o entorno no productivo; no ejecutado aquí por seguridad de entorno. **No** implica verificación en producción.
 
 | # | Caso | Resultado | Evidencia |
 | --- | --- | --- | --- |
@@ -84,9 +84,14 @@ Leyenda:
 
 ## 4. Problemas encontrados
 
-Ninguno bloqueante en suites automáticas.
+Ninguno bloqueante reportado en las suites **históricas** de 2026-10-02.
 
-**Pendiente operativo (no bug):** audit a11y formal y bootstrap ADMIN en UI sobre DB de test dedicada — usar `docs/manual-test-environment.md` (`seed:manual-test`, `dev:test` / `dev:test:lan`). Login oficial: `/login`.
+**Pendiente operativo (no bug / no demostrado en prod):**
+
+- Audit a11y formal.
+- Smoke UI humano completo en entorno **no productivo** (`docs/manual-test-environment.md`: `seed:manual-test`, `dev:test` / `dev:test:lan`). Login oficial: `/login`.
+- Reejecución de integración/aceptación (solo TEST allowlisted) cuando se autorice.
+- Despliegue, cron productivo y DB de producción: **no verificados** en este documento.
 
 ---
 
@@ -98,13 +103,23 @@ Ninguna. Solo documentación de esta validación.
 
 ## 6. Checklist rápido para smoke UI humano (entorno seguro)
 
-Cuando exista un entorno no productivo:
+Cuando exista un entorno **no productivo** (p. ej. `TEST_DATABASE_URL` + `dev:test`), seguir `docs/manual-test-environment.md`.
 
-1. `npm run bootstrap:admin` (solo DB de test).
-2. Login ADMIN → recorrer `/admin`, `/admin/tickets`, `/admin/usuarios`, `/admin/reportes`, `/admin/auditoria`, `/venta`, `/perfil`.
-3. Crear vendedor → logout → login vendedor → `/venta` OK; `/admin*` bloqueado.
-4. Crear ticket simple + multihora → PNG descargar → verificar visualmente lista §9.
-5. Escanear QR → `/ticket/[codigo]`.
-6. Admin: exposición, resultado, cambio de resultado, anulación, reportes, auditoría.
+**No confundir comandos de bootstrap:**
+
+| Comando | Destino permitido |
+| --- | --- |
+| `npm run bootstrap:admin` | Solo **dev-from-recovery** (su guard). **No** es para TEST ni para producción. |
+| `npm run bootstrap:admin:production` | Solo **producción** (dual opt-in + guard). **No** usar en este smoke. |
+
+Para preparar ADMIN/datos en **TEST**, usar el procedimiento de test del proyecto (`npm run seed:manual-test` y/o `npm run ensure:test-admin` según `docs/manual-test-environment.md` / `.env.example`). **No** usar `bootstrap:admin` contra TEST ni contra `DATABASE_URL` de aplicación/producción (véase también §2).
+
+Checklist UI (tras tener ADMIN de prueba por el procedimiento TEST):
+
+1. Login ADMIN → recorrer `/admin`, `/admin/tickets`, `/admin/usuarios`, `/admin/reportes`, `/admin/auditoria`, `/venta`, `/perfil`.
+2. Crear vendedor → logout → login vendedor → `/venta` OK; `/admin*` bloqueado.
+3. Crear ticket simple + multihora → PNG descargar → verificar visualmente lista §9.
+4. Escanear QR → `/ticket/[codigo]`.
+5. Admin: exposición, resultado, cambio de resultado, anulación, reportes, auditoría.
 
 No registrar contraseñas, tokens ni URLs con credenciales en este documento.
