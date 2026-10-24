@@ -31,7 +31,7 @@ export const ANIMALES_CANONICOS: readonly AnimalCanonico[] = [
   { numero: "17", nombre: "Pavo" },
   { numero: "18", nombre: "Burro" },
   { numero: "19", nombre: "Chivo" },
-  { numero: "20", nombre: "Cochino" },
+  { numero: "20", nombre: "Cerdo" },
   { numero: "21", nombre: "Gallo" },
   { numero: "22", nombre: "Camello" },
   { numero: "23", nombre: "Cebra" },
