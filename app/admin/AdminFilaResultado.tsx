@@ -8,7 +8,8 @@ import {
   etiquetaResultadoAnimal,
   formatResultadoLabel,
   mensajeErrorResultado,
-  parseResultadoApiOk,
+  mensajeExitoProgramacion,
+  parseAdminResultadosApiOk,
   resumenExposicionCompacto,
   type AnimalOpcion,
   type OrigenResultadoUi,
@@ -50,6 +51,9 @@ export function AdminFilaResultado({
   const [resultadoActual, setResultadoActual] = useState<ResultadoActual | null>(
     inicial,
   );
+  /** Programación PENDIENTE conocida en esta sesión (no publicada). */
+  const [programacionPendiente, setProgramacionPendiente] =
+    useState<ResultadoActual | null>(null);
   const [estado, setEstado] = useState<"idle" | "guardando" | "ok" | "error">(
     "idle",
   );
@@ -88,7 +92,7 @@ export function AdminFilaResultado({
       };
       const code = codigoErrorResultado(errPayload);
       setEstado("error");
-      if (code === "RESULT_CONFLICT") {
+      if (code === "RESULT_CONFLICT" || code === "SCHEDULE_CONFLICT") {
         setMensaje(
           `${mensajeErrorResultado(errPayload)} Recarga la página para ver el valor actual.`,
         );
@@ -103,13 +107,31 @@ export function AdminFilaResultado({
       return;
     }
 
-    const ok = parseResultadoApiOk(data);
+    const ok = parseAdminResultadosApiOk(data);
     if (!ok) {
       setEstado("error");
       setMensaje("Respuesta inválida del servidor.");
       return;
     }
 
+    if (ok.kind === "programacion") {
+      const p = ok.programacion;
+      if (p.action === "cancelled" || p.estado === "CANCELADO") {
+        setProgramacionPendiente(null);
+      } else if (p.estado === "PENDIENTE") {
+        setProgramacionPendiente({
+          numero: p.numero,
+          nombre: p.nombre,
+        });
+        setNumero(p.numero);
+      }
+      setEstado("ok");
+      setMensaje(mensajeExitoProgramacion(p));
+      resetCorreccionUi();
+      return;
+    }
+
+    setProgramacionPendiente(null);
     setResultadoActual({
       numero: ok.resultado.numero,
       nombre: ok.resultado.nombre,
@@ -142,6 +164,20 @@ export function AdminFilaResultado({
     } catch {
       setEstado("error");
       setMensaje("No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.");
+    }
+  }
+
+  async function cancelarProgramacion() {
+    if (estado === "guardando" || !programacionPendiente) return;
+    setEstado("guardando");
+    setMensaje("");
+    try {
+      await enviar({ fecha, hora, action: "cancelProgramacion" });
+    } catch {
+      setEstado("error");
+      setMensaje(
+        "No se pudo cancelar la programación. Revisa tu conexión e inténtalo de nuevo.",
+      );
     }
   }
 
@@ -214,8 +250,20 @@ export function AdminFilaResultado({
               {horaLabel}
             </p>
             <StatusBadge
-              tone={tieneResultado ? "success" : "warning"}
-              label={tieneResultado ? "Publicado" : "Pendiente"}
+              tone={
+                tieneResultado
+                  ? "success"
+                  : programacionPendiente
+                    ? "info"
+                    : "warning"
+              }
+              label={
+                tieneResultado
+                  ? "Publicado"
+                  : programacionPendiente
+                    ? "Programado"
+                    : "Pendiente"
+              }
             />
             {origenBadge ? (
               <StatusBadge
@@ -233,6 +281,16 @@ export function AdminFilaResultado({
                 </span>
                 {resultadoActual?.nombre
                   ? ` — ${resultadoActual.nombre}`
+                  : null}
+              </span>
+            ) : programacionPendiente ? (
+              <span className="font-semibold text-ink">
+                Programado (oculto):{" "}
+                <span className="font-mono tabular-nums">
+                  {programacionPendiente.numero}
+                </span>
+                {programacionPendiente.nombre
+                  ? ` — ${programacionPendiente.nombre}`
                   : null}
               </span>
             ) : (
@@ -270,22 +328,35 @@ export function AdminFilaResultado({
             ))}
           </Select>
 
-          <Button
-            type="button"
-            variant={tieneResultado ? "secondary" : "primary"}
-            size="md"
-            onClick={() =>
-              void (tieneResultado ? iniciarCorreccion() : publicarNuevo())
-            }
-            disabled={estado === "guardando"}
-            className="sm:min-w-[11rem] sm:shrink-0"
-          >
-            {estado === "guardando"
-              ? "Guardando…"
-              : tieneResultado
-                ? "Corregir…"
-                : "Guardar"}
-          </Button>
+          <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row">
+            <Button
+              type="button"
+              variant={tieneResultado ? "secondary" : "primary"}
+              size="md"
+              onClick={() =>
+                void (tieneResultado ? iniciarCorreccion() : publicarNuevo())
+              }
+              disabled={estado === "guardando"}
+              className="sm:min-w-[11rem]"
+            >
+              {estado === "guardando"
+                ? "Guardando…"
+                : tieneResultado
+                  ? "Corregir…"
+                  : "Guardar"}
+            </Button>
+            {programacionPendiente && !tieneResultado ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={() => void cancelarProgramacion()}
+                disabled={estado === "guardando"}
+              >
+                Cancelar programación
+              </Button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

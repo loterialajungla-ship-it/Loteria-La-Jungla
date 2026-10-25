@@ -25,10 +25,19 @@ const ACCIONES = new Set<string>([
   "CREAR_RESULTADO",
   "MODIFICAR_RESULTADO",
   "CREAR_ADMIN",
+  "PROGRAMAR_RESULTADO",
+  "MODIFICAR_PROGRAMACION",
+  "CANCELAR_PROGRAMACION",
 ]);
 
 
-const ENTIDADES = new Set<string>(["TICKET", "USUARIO", "RESULTADO", "AUTH"]);
+const ENTIDADES = new Set<string>([
+  "TICKET",
+  "USUARIO",
+  "RESULTADO",
+  "AUTH",
+  "RESULTADO_PROGRAMADO",
+]);
 
 function parsePositiveInt(
   value: string | number | null | undefined,

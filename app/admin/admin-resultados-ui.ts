@@ -62,6 +62,7 @@ export function resumenExposicionCompacto(args: {
 
 export type ResultadoApiOk = {
   ok: true;
+  kind: "resultado";
   resultado: {
     hora: number;
     numero: string;
@@ -69,6 +70,20 @@ export type ResultadoApiOk = {
     origen?: OrigenResultadoUi;
   };
 };
+
+export type ProgramacionApiOk = {
+  ok: true;
+  kind: "programacion";
+  programacion: {
+    action: "created" | "updated" | "cancelled";
+    hora: number;
+    numero: string;
+    nombre: string;
+    estado: string;
+  };
+};
+
+export type AdminResultadosApiOk = ResultadoApiOk | ProgramacionApiOk;
 
 export type ResultadoApiError = {
   ok?: false;
@@ -107,6 +122,8 @@ export function parseResultadoApiOk(data: unknown): ResultadoApiOk | null {
   if (!data || typeof data !== "object") return null;
   const d = data as Record<string, unknown>;
   if (d.ok !== true) return null;
+  // Una respuesta de programación válida no es un resultado publicado.
+  if (d.programacion != null && d.resultado == null) return null;
   const r = d.resultado;
   if (!r || typeof r !== "object") return null;
   const resultado = r as Record<string, unknown>;
@@ -125,6 +142,7 @@ export function parseResultadoApiOk(data: unknown): ResultadoApiOk | null {
 
   return {
     ok: true,
+    kind: "resultado",
     resultado: {
       hora: resultado.hora,
       numero: resultado.numero,
@@ -132,4 +150,62 @@ export function parseResultadoApiOk(data: unknown): ResultadoApiOk | null {
       ...(origen ? { origen } : {}),
     },
   };
+}
+
+const PROGRAMACION_ACTIONS = new Set(["created", "updated", "cancelled"]);
+
+export function parseProgramacionApiOk(
+  data: unknown,
+): ProgramacionApiOk | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (d.ok !== true) return null;
+  if (d.resultado != null) return null;
+  const p = d.programacion;
+  if (!p || typeof p !== "object") return null;
+  const programacion = p as Record<string, unknown>;
+  if (
+    typeof programacion.action !== "string" ||
+    !PROGRAMACION_ACTIONS.has(programacion.action) ||
+    typeof programacion.numero !== "string" ||
+    typeof programacion.nombre !== "string" ||
+    typeof programacion.hora !== "number" ||
+    typeof programacion.estado !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    ok: true,
+    kind: "programacion",
+    programacion: {
+      action: programacion.action as "created" | "updated" | "cancelled",
+      hora: programacion.hora,
+      numero: programacion.numero,
+      nombre: programacion.nombre,
+      estado: programacion.estado,
+    },
+  };
+}
+
+/** Éxito de POST /api/admin/resultados: resultado publicado o programación. */
+export function parseAdminResultadosApiOk(
+  data: unknown,
+): AdminResultadosApiOk | null {
+  return parseResultadoApiOk(data) ?? parseProgramacionApiOk(data);
+}
+
+export function mensajeExitoProgramacion(
+  programacion: ProgramacionApiOk["programacion"],
+): string {
+  const label = programacion.nombre
+    ? `${programacion.numero} — ${programacion.nombre}`
+    : programacion.numero;
+  if (programacion.action === "cancelled") {
+    return `Programación cancelada (${label}). No se publicará automáticamente.`;
+  }
+  if (programacion.action === "updated") {
+    return `Programación actualizada: ${label}. Se publicará al llegar la hora.`;
+  }
+  return `Resultado programado: ${label}. Se publicará al llegar la hora (no es público aún).`;
 }

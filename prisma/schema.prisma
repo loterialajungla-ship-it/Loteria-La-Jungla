@@ -30,6 +30,8 @@ model Animal {
 
   resultados Resultado[]
 
+  resultadosProgramados ResultadoProgramado[]
+
   lineas     TicketLinea[] // apuestas históricas que referencian este animal
 
 }
@@ -64,10 +66,46 @@ model Resultado {
 
   createdAt DateTime        @default(now())
 
+  /// Como máximo una programación que materializó este resultado.
+  programacion ResultadoProgramado?
+
 
 
   @@unique([fecha, hora]) // evita cargar dos veces el mismo sorteo del día
 
+}
+
+
+
+/// Estados de una selección admin previa a la publicación.
+enum EstadoResultadoProgramado {
+  PENDIENTE
+  PUBLICADO
+  CANCELADO
+  SUPERSEDED
+}
+
+
+
+/// Selección de animal para un sorteo futuro (no publicada; no cierra venta).
+model ResultadoProgramado {
+  id          String                   @id @default(cuid())
+  fecha       DateTime                 @db.Date
+  hora        Int
+  numero      String
+  animal      Animal                   @relation(fields: [numero], references: [numero])
+  estado      EstadoResultadoProgramado @default(PENDIENTE)
+  /// Set al materializar en Resultado; null mientras está pendiente/cancelada.
+  resultadoId String?                  @unique
+  resultado   Resultado?               @relation(fields: [resultadoId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdById String
+  createdBy   Usuario                  @relation("ResultadoProgramadoCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  @@unique([fecha, hora])
+  @@index([estado, fecha])
+  @@index([createdById, createdAt])
 }
 
 
@@ -154,6 +192,8 @@ model Usuario {
 
   auditorias   Auditoria[]
 
+  resultadosProgramadosCreados ResultadoProgramado[] @relation("ResultadoProgramadoCreatedBy")
+
 
 
   @@index([rol, activo])
@@ -217,6 +257,15 @@ enum AccionAuditoria {
   /// Provisionamiento del primer ADMIN (bootstrap de producción / sistema).
   CREAR_ADMIN
 
+  /// Programación pendiente de un animal para una franja futura.
+  PROGRAMAR_RESULTADO
+
+  /// Cambio del animal en una programación aún PENDIENTE.
+  MODIFICAR_PROGRAMACION
+
+  /// Cancelación de una programación aún PENDIENTE.
+  CANCELAR_PROGRAMACION
+
 }
 
 
@@ -230,6 +279,9 @@ enum EntidadAuditoria {
   RESULTADO
 
   AUTH
+
+  /// Selección admin previa a publicación (ResultadoProgramado).
+  RESULTADO_PROGRAMADO
 
 }
 

@@ -4,12 +4,13 @@ import { recordAuditEvent } from "@/lib/audit/audit";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { assertCanonicalAnimalCatalogFromDb } from "@/lib/resultados/catalogo-animalitos-canonico";
 import { MOTIVO_CORRECCION_MAX } from "@/lib/resultados/correction-constants";
+import { reconcilePendingScheduleForPublishedSlot } from "@/lib/resultados/reconcile-pending-schedule";
 
 export { MOTIVO_CORRECCION_MAX } from "@/lib/resultados/correction-constants";
 
 export type SaveManualDb = Pick<
   PrismaClient,
-  "resultado" | "auditoria" | "animal" | "$transaction"
+  "resultado" | "resultadoProgramado" | "auditoria" | "animal" | "$transaction"
 >;
 
 export type SaveManualResultRow = {
@@ -145,6 +146,14 @@ export async function createManualResult(
         include: { animal: true },
       });
 
+      // Coherencia con cron: no dejar PENDIENTE tras publicación inmediata.
+      const reconciled = await reconcilePendingScheduleForPublishedSlot(tx, {
+        fecha,
+        hora,
+        resultadoId: created.id,
+        numero,
+      });
+
       await recordAuditEvent(tx, {
         usuarioId: adminUserId,
         accion: "CREAR_RESULTADO",
@@ -156,6 +165,7 @@ export async function createManualResult(
           numeroAnterior: null,
           numeroNuevo: numero,
           origen: "MANUAL",
+          ...(reconciled.linked ? { desdeProgramacion: true } : {}),
         },
       });
 
