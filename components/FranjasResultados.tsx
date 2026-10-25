@@ -1,3 +1,4 @@
+import { AnimalResultadoImagen } from "@/components/AnimalResultadoImagen";
 import {
   HORAS_SORTEO,
   formatearHoraSorteo,
@@ -102,13 +103,22 @@ export function FranjasResultados({
               </div>
 
               {resultado ? (
-                <p className="mt-2 text-2xl font-bold leading-tight tracking-tight text-emerald-50 sm:text-3xl">
-                  <span className="font-mono tabular-nums">
-                    {resultado.numero}
-                  </span>
-                  <span className="mx-1.5 font-normal text-emerald-400">—</span>
-                  <span>{resultado.nombre}</span>
-                </p>
+                <div className="mt-2 flex items-center gap-3 sm:gap-4">
+                  <AnimalResultadoImagen
+                    numero={resultado.numero}
+                    nombre={resultado.nombre}
+                    priority={hora <= 11}
+                  />
+                  <p className="min-w-0 text-2xl font-bold leading-tight tracking-tight text-emerald-50 sm:text-3xl">
+                    <span className="font-mono tabular-nums">
+                      {resultado.numero}
+                    </span>
+                    <span className="mx-1.5 font-normal text-emerald-400">
+                      —
+                    </span>
+                    <span>{resultado.nombre}</span>
+                  </p>
+                </div>
               ) : (
                 <p className={`mt-2 text-lg font-semibold ${pendiente.clase}`}>
                   {pendiente.texto}
