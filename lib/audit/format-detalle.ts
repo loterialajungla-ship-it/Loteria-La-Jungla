@@ -30,8 +30,10 @@ export function formatAuditDetalleLegible(args: {
   const d = args.detalle ?? {};
   const names = args.nombrePorNumero ?? new Map<string, string>();
 
-  // Incluye CREAR_ADMIN del schema aunque el client no se haya regenerado aún.
-  switch (args.accion as AccionAuditoria | "CREAR_ADMIN") {
+  // Incluye acciones nuevas del schema aunque el client no se haya regenerado aún.
+  switch (
+    args.accion as AccionAuditoria | "CREAR_ADMIN" | "PROGRAMAR_RESULTADO" | "MODIFICAR_PROGRAMACION" | "CANCELAR_PROGRAMACION"
+  ) {
     case "CREAR_RESULTADO": {
       const fecha = str(d.fecha);
       const hora = typeof d.hora === "number" ? d.hora : Number(d.hora);
@@ -113,6 +115,34 @@ export function formatAuditDetalleLegible(args: {
       return "Inicio de sesión";
     case "LOGOUT":
       return "Cierre de sesión";
+    case "PROGRAMAR_RESULTADO": {
+      const fecha = str(d.fecha);
+      const hora = typeof d.hora === "number" ? d.hora : Number(d.hora);
+      const numero = str(d.numeroNuevo) ?? str(d.numero);
+      const horaLabel = Number.isInteger(hora)
+        ? formatearHoraSorteo(hora)
+        : "?";
+      return `Programación ${fecha ?? "?"} ${horaLabel}: ${animalLabel(numero, names)}`;
+    }
+    case "MODIFICAR_PROGRAMACION": {
+      const fecha = str(d.fecha);
+      const hora = typeof d.hora === "number" ? d.hora : Number(d.hora);
+      const ant = str(d.numeroAnterior);
+      const neu = str(d.numeroNuevo);
+      const horaLabel = Number.isInteger(hora)
+        ? formatearHoraSorteo(hora)
+        : "?";
+      return `Programación ${fecha ?? "?"} ${horaLabel}: ${animalLabel(ant, names)} → ${animalLabel(neu, names)}`;
+    }
+    case "CANCELAR_PROGRAMACION": {
+      const fecha = str(d.fecha);
+      const hora = typeof d.hora === "number" ? d.hora : Number(d.hora);
+      const numero = str(d.numeroAnterior) ?? str(d.numero);
+      const horaLabel = Number.isInteger(hora)
+        ? formatearHoraSorteo(hora)
+        : "?";
+      return `Cancelación de programación ${fecha ?? "?"} ${horaLabel}: ${animalLabel(numero, names)}`;
+    }
     default:
       return args.accion;
   }

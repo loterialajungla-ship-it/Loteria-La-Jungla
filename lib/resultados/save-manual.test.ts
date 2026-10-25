@@ -38,21 +38,40 @@ function rowKey(fecha: Date, hora: number): string {
   return `${fecha.toISOString()}|${hora}`;
 }
 
+type ScheduleRow = {
+  id: string;
+  fecha: Date;
+  hora: number;
+  numero: string;
+  estado: "PENDIENTE" | "PUBLICADO" | "CANCELADO" | "SUPERSEDED";
+  resultadoId: string | null;
+};
+
 function makeFakeDb(
   seed: Row[] = [],
   catalog: { numero: string; nombre: string }[] = ANIMALES_CANONICOS.map(
     (a) => ({ numero: a.numero, nombre: a.nombre }),
   ),
+  scheduleSeed: ScheduleRow[] = [],
 ) {
   let rows = new Map<string, Row>();
   for (const r of seed) {
     rows.set(rowKey(r.fecha, r.hora), { ...r, animal: { ...r.animal } });
   }
+  let schedules = new Map<string, ScheduleRow>();
+  for (const s of scheduleSeed) {
+    schedules.set(rowKey(s.fecha, s.hora), { ...s });
+  }
   let audits: AuditRow[] = [];
   let failAudit = false;
   /** Simula otra TX que cambia `numero` justo antes del CAS updateMany. */
   let casRaceNumero: string | null = null;
-  const stats = { createCalls: 0, updateManyCalls: 0, auditCreates: 0 };
+  const stats = {
+    createCalls: 0,
+    updateManyCalls: 0,
+    scheduleUpdateManyCalls: 0,
+    auditCreates: 0,
+  };
   const nombrePorNumero = new Map(catalog.map((a) => [a.numero, a.nombre]));
 
   function snapshot() {
@@ -63,12 +82,16 @@ function makeFakeDb(
           { ...v, animal: { ...v.animal } },
         ]),
       ),
+      schedules: new Map(
+        [...schedules.entries()].map(([k, v]) => [k, { ...v }]),
+      ),
       audits: audits.map((a) => ({ ...a })),
     };
   }
 
   function restore(s: ReturnType<typeof snapshot>) {
     rows = s.rows;
+    schedules = s.schedules;
     audits = s.audits;
   }
 
@@ -89,10 +112,48 @@ function makeFakeDb(
     get(fecha: Date, hora: number) {
       return rows.get(rowKey(fecha, hora)) ?? null;
     },
+    getSchedule(fecha: Date, hora: number) {
+      return schedules.get(rowKey(fecha, hora)) ?? null;
+    },
     animal: {
       async findMany(args: { select: { numero: true; nombre: true } }) {
         void args;
         return catalog.map((a) => ({ numero: a.numero, nombre: a.nombre }));
+      },
+    },
+    resultadoProgramado: {
+      async updateMany(args: {
+        where: {
+          fecha: Date;
+          hora: number;
+          estado: ScheduleRow["estado"];
+          numero?: string;
+        };
+        data: {
+          estado?: ScheduleRow["estado"];
+          resultadoId?: string | null;
+        };
+      }) {
+        stats.scheduleUpdateManyCalls += 1;
+        const key = rowKey(args.where.fecha, args.where.hora);
+        const row = schedules.get(key);
+        if (!row || row.estado !== args.where.estado) return { count: 0 };
+        if (
+          args.where.numero !== undefined &&
+          row.numero !== args.where.numero
+        ) {
+          return { count: 0 };
+        }
+        schedules.set(key, {
+          ...row,
+          ...(args.data.estado !== undefined
+            ? { estado: args.data.estado }
+            : {}),
+          ...(args.data.resultadoId !== undefined
+            ? { resultadoId: args.data.resultadoId }
+            : {}),
+        });
+        return { count: 1 };
       },
     },
     resultado: {
@@ -321,6 +382,58 @@ describe("createManualResult", () => {
     );
     assert.equal(db.get(FECHA, 14)?.numero, "05");
     assert.equal(db.audits.length, 0);
+  });
+
+  it("PENDIENTE con mismo número → PUBLICADO enlazado en la misma TX", async () => {
+    const db = makeFakeDb(
+      [],
+      undefined,
+      [
+        {
+          id: "sch-1",
+          fecha: FECHA,
+          hora: 14,
+          numero: "03",
+          estado: "PENDIENTE",
+          resultadoId: null,
+        },
+      ],
+    );
+    const row = await createManualResult(db as never, {
+      fecha: FECHA,
+      hora: 14,
+      numero: "03",
+      adminUserId: "admin-1",
+    });
+    const sch = db.getSchedule(FECHA, 14);
+    assert.equal(sch?.estado, "PUBLICADO");
+    assert.equal(sch?.resultadoId, row.id);
+  });
+
+  it("PENDIENTE con otro número → SUPERSEDED al publicar inmediato", async () => {
+    const db = makeFakeDb(
+      [],
+      undefined,
+      [
+        {
+          id: "sch-1",
+          fecha: FECHA,
+          hora: 14,
+          numero: "20",
+          estado: "PENDIENTE",
+          resultadoId: null,
+        },
+      ],
+    );
+    await createManualResult(db as never, {
+      fecha: FECHA,
+      hora: 14,
+      numero: "03",
+      adminUserId: "admin-1",
+    });
+    const sch = db.getSchedule(FECHA, 14);
+    assert.equal(sch?.estado, "SUPERSEDED");
+    assert.equal(sch?.resultadoId, null);
   });
 });
 

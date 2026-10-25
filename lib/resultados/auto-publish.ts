@@ -1,15 +1,21 @@
-import { Prisma } from "@prisma/client";
 import type { OrigenResultado, PrismaClient } from "@prisma/client";
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import {
   assertCanonicalAnimalCatalog,
 } from "@/lib/resultados/catalogo-animalitos-canonico";
+import {
+  classifyP2002Target,
+  isUniqueViolation,
+} from "@/lib/resultados/p2002";
 import { pickRandomAnimalNumero } from "@/lib/resultados/pick-animal";
 import {
   listDueDrawSlots,
   type DrawSlot,
 } from "@/lib/resultados/pending-slots";
+import { reconcilePendingScheduleForPublishedSlot } from "@/lib/resultados/reconcile-pending-schedule";
+
+export { classifyP2002Target } from "@/lib/resultados/p2002";
 
 export type AutoPublishSlotResult =
   | {
@@ -49,14 +55,17 @@ export type AutoPublishRunResult = {
 
 type AutoPublishDb = Pick<
   PrismaClient,
-  "animal" | "resultado" | "auditoria" | "$transaction"
+  "animal" | "resultado" | "resultadoProgramado" | "auditoria" | "$transaction"
 >;
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002"
-  );
+/** Enlace programación→resultado falló (cancelación/cambio concurrente). */
+export class ProgramacionMaterializacionError extends Error {
+  readonly code = "SCHEDULE_LINK_FAILED";
+
+  constructor(message = "No se pudo materializar la programación pendiente.") {
+    super(message);
+    this.name = "ProgramacionMaterializacionError";
+  }
 }
 
 const SLOT_ERROR_PUBLIC = "No se pudo publicar el sorteo.";
@@ -71,10 +80,14 @@ export type TryCreateAutomaticOptions = {
 };
 
 /**
- * Intenta crear un resultado AUTOMATICO para (fecha, hora).
- * Create-only: si ya existe (manual o automático), no sobrescribe.
- * Idempotente bajo reintentos y carreras (@@unique + P2002).
+ * Intenta crear un resultado para (fecha, hora) vencida sin Resultado.
+ * Preferencia: programación PENDIENTE → Resultado MANUAL con ese número.
+ * Si no hay pendiente: AUTOMATICO aleatorio (comportamiento histórico).
+ * Create-only: si ya existe, no sobrescribe. Idempotente (@@unique + P2002).
  * Fail-closed: valida catálogo canónico antes de crear/auditar.
+ *
+ * Atomicidad programada: create + updateMany(id, PENDIENTE, numero) con
+ * count===1; si no, throw → rollback de Resultado y auditoría de la TX.
  */
 export async function tryCreateAutomaticResult(
   db: AutoPublishDb,
@@ -108,20 +121,60 @@ export async function tryCreateAutomaticResult(
     });
     assertCanonicalAnimalCatalog(catalogRows);
   }
-  const numeros = catalogRows.map((a) => a.numero);
-  const numero = pickRandomAnimalNumero(numeros);
+  const numerosCatalogo = catalogRows.map((a) => a.numero);
+  const catalogSet = new Set(numerosCatalogo);
 
   try {
     const created = await db.$transaction(async (tx) => {
+      // Releer programación dentro de la TX (solo PENDIENTE cuenta).
+      const programado = await tx.resultadoProgramado.findUnique({
+        where: { fecha_hora: { fecha: slot.fecha, hora: slot.hora } },
+        select: { id: true, numero: true, estado: true },
+      });
+
+      const usarProgramado =
+        programado?.estado === "PENDIENTE" &&
+        catalogSet.has(programado.numero);
+
+      const numeroMaterializado = usarProgramado
+        ? programado!.numero
+        : pickRandomAnimalNumero(numerosCatalogo);
+      const origen: OrigenResultado = usarProgramado ? "MANUAL" : "AUTOMATICO";
+
       const row = await tx.resultado.create({
         data: {
           fecha: slot.fecha,
           hora: slot.hora,
-          numero,
-          origen: "AUTOMATICO",
+          numero: numeroMaterializado,
+          origen,
         },
         select: { id: true, numero: true, origen: true },
       });
+
+      let desdeProgramacion = false;
+      let programacionId: string | undefined;
+
+      if (usarProgramado && programado) {
+        // Condición optimista: id + PENDIENTE + número leído en esta TX.
+        const linked = await tx.resultadoProgramado.updateMany({
+          where: {
+            id: programado.id,
+            estado: "PENDIENTE",
+            numero: numeroMaterializado,
+          },
+          data: {
+            estado: "PUBLICADO",
+            resultadoId: row.id,
+          },
+        });
+
+        if (linked.count !== 1) {
+          // Abortar TX: revierte Resultado (y cualquier auditoría posterior).
+          throw new ProgramacionMaterializacionError();
+        }
+        desdeProgramacion = true;
+        programacionId = programado.id;
+      }
 
       await recordAuditEvent(tx, {
         usuarioId: null,
@@ -133,8 +186,11 @@ export async function tryCreateAutomaticResult(
           hora: slot.hora,
           numeroAnterior: null,
           numeroNuevo: row.numero,
-          origen: "AUTOMATICO",
+          origen: row.origen,
           generadoEn: ahora.toISOString(),
+          ...(desdeProgramacion && programacionId
+            ? { desdeProgramacion: true, programacionId }
+            : {}),
         },
       });
 
@@ -152,25 +208,50 @@ export async function tryCreateAutomaticResult(
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
 
+    // Evidencia de materialización ajena: Resultado ya existe para la franja.
     const race = await db.resultado.findUnique({
       where: { fecha_hora: { fecha: slot.fecha, hora: slot.hora } },
-      select: { numero: true, origen: true },
+      select: { id: true, numero: true, origen: true },
     });
-    if (!race) throw error;
 
-    return {
-      status: "skipped_exists",
-      fecha: fechaStr,
-      hora: slot.hora,
-      numero: race.numero,
-      origen: race.origen,
-    };
+    const targetKind = classifyP2002Target(error);
+
+    /**
+     * Política P2002:
+     * - `slot` + Resultado → carrera de franja: skipped_exists + reconciliar
+     *   PENDIENTE por [fecha,hora] (enlace o SUPERSEDED).
+     * - `unknown` + Resultado → skipped_exists; reconciliar igual usando solo
+     *   la clave de franja (no el target del P2002) para no dejar huérfanas.
+     * - `other`, o sin Resultado → no mutar; propagar.
+     */
+    if (
+      race != null &&
+      (targetKind === "slot" || targetKind === "unknown")
+    ) {
+      await reconcilePendingScheduleForPublishedSlot(db, {
+        fecha: slot.fecha,
+        hora: slot.hora,
+        resultadoId: race.id,
+        numero: race.numero,
+      });
+
+      return {
+        status: "skipped_exists",
+        fecha: fechaStr,
+        hora: slot.hora,
+        numero: race.numero,
+        origen: race.origen,
+      };
+    }
+
+    throw error;
   }
 }
 
 /**
- * Publica resultados AUTOMATICOS para todas las franjas vencidas del día
+ * Publica resultados para todas las franjas vencidas del día
  * America/Caracas que aún no tengan resultado.
+ * Preferencia: programación PENDIENTE → MANUAL; si no, AUTOMATICO aleatorio.
  * Un fallo en una franja no detiene las demás.
  *
  * Fail-closed: valida el catálogo canónico (38 números + nombres) **antes**

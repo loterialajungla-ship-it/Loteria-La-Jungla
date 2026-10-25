@@ -118,6 +118,23 @@ export function haLlegadoFranja(horaFranja: number, ahora = new Date()): boolean
   return horaFranja <= ahoraVenezuela(ahora).hour;
 }
 
+/**
+ * True si la franja (fecha @db.Date + hora 9–19) aún no ha llegado
+ * en America/Caracas: día futuro, o mismo día con hora estrictamente posterior.
+ */
+export function esFranjaFutura(
+  fecha: Date,
+  hora: number,
+  ahora = new Date(),
+): boolean {
+  const hoy = fechaHoyParaPrisma(ahora);
+  const fechaMs = fecha.getTime();
+  const hoyMs = hoy.getTime();
+  if (fechaMs > hoyMs) return true;
+  if (fechaMs < hoyMs) return false;
+  return !haLlegadoFranja(hora, ahora);
+}
+
 /** Suma/resta días sobre una fecha @db.Date (medianoche UTC). */
 export function sumarDiasUTC(fecha: Date, dias: number): Date {
   const siguiente = new Date(fecha);

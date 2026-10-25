@@ -6,6 +6,9 @@ import {
   etiquetaResultadoAnimal,
   formatResultadoLabel,
   mensajeErrorResultado,
+  mensajeExitoProgramacion,
+  parseAdminResultadosApiOk,
+  parseProgramacionApiOk,
   parseResultadoApiOk,
   resumenExposicionCompacto,
 } from "@/app/admin/admin-resultados-ui";
@@ -47,14 +50,76 @@ describe("admin-resultados-ui — guardar / modificar respuesta API", () => {
       },
     });
     assert.ok(parsed);
+    assert.equal(parsed!.kind, "resultado");
     assert.equal(parsed!.resultado.numero, "03");
     assert.equal(parsed!.resultado.nombre, "Ciempiés");
     assert.equal(parsed!.resultado.origen, "MANUAL");
   });
 
+  it("parsea programación futura sin exigir resultado", () => {
+    const parsed = parseProgramacionApiOk({
+      ok: true,
+      programacion: {
+        action: "created",
+        hora: 11,
+        numero: "20",
+        nombre: "Cerdo",
+        estado: "PENDIENTE",
+      },
+    });
+    assert.ok(parsed);
+    assert.equal(parsed!.kind, "programacion");
+    assert.equal(parsed!.programacion.action, "created");
+    assert.equal(parseResultadoApiOk({
+      ok: true,
+      programacion: {
+        action: "created",
+        hora: 11,
+        numero: "20",
+        nombre: "Cerdo",
+        estado: "PENDIENTE",
+      },
+    }), null);
+  });
+
+  it("parsea cancelación de programación", () => {
+    const parsed = parseAdminResultadosApiOk({
+      ok: true,
+      programacion: {
+        action: "cancelled",
+        hora: 11,
+        numero: "20",
+        nombre: "Cerdo",
+        estado: "CANCELADO",
+      },
+    });
+    assert.ok(parsed && parsed.kind === "programacion");
+    assert.match(
+      mensajeExitoProgramacion(parsed.programacion),
+      /cancelada/i,
+    );
+  });
+
+  it("no interpreta error como éxito", () => {
+    assert.equal(
+      parseAdminResultadosApiOk({
+        ok: false,
+        error: { code: "SCHEDULE_CONFLICT", message: "Conflicto" },
+      }),
+      null,
+    );
+  });
+
   it("rechaza payload inválido", () => {
     assert.equal(parseResultadoApiOk({ ok: true }), null);
     assert.equal(parseResultadoApiOk({ error: "Datos inválidos" }), null);
+    assert.equal(
+      parseProgramacionApiOk({
+        ok: true,
+        programacion: { action: "created", hora: 9 },
+      }),
+      null,
+    );
   });
 
   it("mensajes de error amigables sin stack", () => {

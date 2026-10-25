@@ -19,9 +19,16 @@ import {
   correctPublishedResult,
   createManualResult,
 } from "@/lib/resultados/save-manual";
+import {
+  cancelPendingSchedule,
+  upsertPendingSchedule,
+  type ScheduleResultRow,
+} from "@/lib/resultados/schedule-result";
 
 const FECHA_STR = "2099-11-15";
 const FECHA = new Date(Date.UTC(2099, 10, 15));
+/** Fecha vencida para publicación inmediata en tests. */
+const FECHA_PASADA_STR = "2020-03-10";
 const HORA = 11;
 const NUMERO_NUEVO = "10";
 const NUMERO_ACTUAL = "05";
@@ -51,9 +58,13 @@ function rowKey(fecha: Date, hora: number): string {
 type WriteStats = {
   createCalls: number;
   updateManyCalls: number;
+  scheduleCreateCalls: number;
+  scheduleUpdateManyCalls: number;
   auditCreates: number;
   createManualCalls: number;
   correctCalls: number;
+  upsertScheduleCalls: number;
+  cancelScheduleCalls: number;
 };
 
 function makeFakePrisma(
@@ -61,18 +72,28 @@ function makeFakePrisma(
   catalog: { numero: string; nombre: string }[] = ANIMALES_CANONICOS.map(
     (a) => ({ numero: a.numero, nombre: a.nombre }),
   ),
+  scheduleSeed: ScheduleResultRow[] = [],
 ) {
   let rows = new Map<string, Row>();
   for (const r of seed) {
     rows.set(rowKey(r.fecha, r.hora), { ...r, animal: { ...r.animal } });
   }
+  let schedules = new Map<string, ScheduleResultRow>();
+  for (const s of scheduleSeed) {
+    schedules.set(rowKey(s.fecha, s.hora), { ...s });
+  }
   let audits: AuditRow[] = [];
+  let scheduleIdSeq = 1;
   const stats: WriteStats = {
     createCalls: 0,
     updateManyCalls: 0,
+    scheduleCreateCalls: 0,
+    scheduleUpdateManyCalls: 0,
     auditCreates: 0,
     createManualCalls: 0,
     correctCalls: 0,
+    upsertScheduleCalls: 0,
+    cancelScheduleCalls: 0,
   };
 
   const animales = new Map<string, { numero: string; nombre: string }>(
@@ -87,12 +108,16 @@ function makeFakePrisma(
           { ...v, animal: { ...v.animal } },
         ]),
       ),
+      schedules: new Map(
+        [...schedules.entries()].map(([k, v]) => [k, { ...v }]),
+      ),
       audits: audits.map((a) => ({ ...a })),
     };
   }
 
   function restore(s: ReturnType<typeof snapshot>) {
     rows = s.rows;
+    schedules = s.schedules;
     audits = s.audits;
   }
 
@@ -106,9 +131,18 @@ function makeFakePrisma(
     get(fecha: Date, hora: number) {
       return rows.get(rowKey(fecha, hora)) ?? null;
     },
+    getSchedule(fecha: Date, hora: number) {
+      return schedules.get(rowKey(fecha, hora)) ?? null;
+    },
     animal: {
-      async findUnique(args: { where: { numero: string } }) {
-        return animales.get(args.where.numero) ?? null;
+      async findUnique(args: {
+        where: { numero: string };
+        select?: { numero: true };
+      }) {
+        const row = animales.get(args.where.numero);
+        if (!row) return null;
+        if (args.select) return { numero: row.numero };
+        return { ...row };
       },
       async findMany(args: { select: { numero: true; nombre: true } }) {
         void args;
@@ -116,6 +150,90 @@ function makeFakePrisma(
           numero: a.numero,
           nombre: a.nombre,
         }));
+      },
+    },
+    resultadoProgramado: {
+      async findUnique(args: {
+        where: { fecha_hora: { fecha: Date; hora: number } };
+      }) {
+        const row = schedules.get(
+          rowKey(args.where.fecha_hora.fecha, args.where.fecha_hora.hora),
+        );
+        return row ? { ...row } : null;
+      },
+      async create(args: {
+        data: {
+          fecha: Date;
+          hora: number;
+          numero: string;
+          estado: "PENDIENTE";
+          createdById: string;
+        };
+      }) {
+        stats.scheduleCreateCalls += 1;
+        const row: ScheduleResultRow = {
+          id: `sch-${scheduleIdSeq++}`,
+          fecha: args.data.fecha,
+          hora: args.data.hora,
+          numero: args.data.numero,
+          estado: args.data.estado,
+          resultadoId: null,
+          createdById: args.data.createdById,
+        };
+        schedules.set(rowKey(row.fecha, row.hora), row);
+        return { ...row };
+      },
+      async updateMany(args: {
+        where:
+          | { id: string; estado: ScheduleResultRow["estado"] }
+          | {
+              fecha: Date;
+              hora: number;
+              estado: ScheduleResultRow["estado"];
+              numero?: string;
+            };
+        data: {
+          numero?: string;
+          estado?: ScheduleResultRow["estado"];
+          resultadoId?: string | null;
+        };
+      }) {
+        stats.scheduleUpdateManyCalls += 1;
+        let count = 0;
+        for (const [key, row] of schedules) {
+          let match = false;
+          if ("id" in args.where) {
+            match =
+              row.id === args.where.id && row.estado === args.where.estado;
+          } else {
+            match =
+              row.fecha.getTime() === args.where.fecha.getTime() &&
+              row.hora === args.where.hora &&
+              row.estado === args.where.estado;
+            if (
+              match &&
+              args.where.numero !== undefined &&
+              row.numero !== args.where.numero
+            ) {
+              match = false;
+            }
+          }
+          if (!match) continue;
+          schedules.set(key, {
+            ...row,
+            ...(args.data.numero !== undefined
+              ? { numero: args.data.numero }
+              : {}),
+            ...(args.data.estado !== undefined
+              ? { estado: args.data.estado }
+              : {}),
+            ...(args.data.resultadoId !== undefined
+              ? { resultadoId: args.data.resultadoId }
+              : {}),
+          });
+          count += 1;
+        }
+        return { count };
       },
     },
     resultado: {
@@ -318,6 +436,18 @@ function depsFor(
       bag.lastCorrectArgs = args[1];
       return correctPublishedResult(...args);
     }) as typeof correctPublishedResult,
+    upsertPendingSchedule: (async (
+      ...args: Parameters<typeof upsertPendingSchedule>
+    ) => {
+      db.stats.upsertScheduleCalls += 1;
+      return upsertPendingSchedule(...args);
+    }) as typeof upsertPendingSchedule,
+    cancelPendingSchedule: (async (
+      ...args: Parameters<typeof cancelPendingSchedule>
+    ) => {
+      db.stats.cancelScheduleCalls += 1;
+      return cancelPendingSchedule(...args);
+    }) as typeof cancelPendingSchedule,
   };
 
   return { deps, bag };
@@ -564,7 +694,7 @@ describe("postAdminResultadosWithDeps (HTTP aislado)", () => {
     assert.equal(db.get(FECHA, HORA)?.numero, NUMERO_ACTUAL);
   });
 
-  it("catálogo canónico → publicación manual nueva OK", async () => {
+  it("catálogo canónico → franja futura programa sin crear Resultado", async () => {
     const db = makeFakePrisma([]);
     const { deps } = depsFor(db, async () => adminActor());
     const res = await postAdminResultadosWithDeps(
@@ -573,17 +703,163 @@ describe("postAdminResultadosWithDeps (HTTP aislado)", () => {
         hora: HORA,
         numero: NUMERO_NUEVO,
       }),
-      deps,
+      { ...deps, ahora: new Date("2026-01-01T12:00:00.000Z") },
     );
     const { status, body } = await parseJson(res);
     assert.equal(status, 200);
     assert.equal(body.ok, true);
+    assert.equal(body.resultado, undefined);
+    assert.equal(
+      (body as { programacion?: { numero?: string; estado?: string } })
+        .programacion?.numero,
+      NUMERO_NUEVO,
+    );
+    assert.equal(
+      (body as { programacion?: { estado?: string } }).programacion?.estado,
+      "PENDIENTE",
+    );
+    assert.equal(db.stats.createManualCalls, 0);
+    assert.equal(db.stats.createCalls, 0);
+    assert.equal(db.get(FECHA, HORA), null);
+    assert.equal(db.getSchedule(FECHA, HORA)?.estado, "PENDIENTE");
+    assert.equal(db.audits[0]!.accion, "PROGRAMAR_RESULTADO");
+  });
+
+  it("franja vencida sin Resultado → publicación MANUAL inmediata", async () => {
+    const db = makeFakePrisma([]);
+    const { deps } = depsFor(db, async () => adminActor());
+    const res = await postAdminResultadosWithDeps(
+      jsonRequest({
+        fecha: FECHA_PASADA_STR,
+        hora: HORA,
+        numero: NUMERO_NUEVO,
+      }),
+      { ...deps, ahora: new Date("2026-10-25T18:00:00.000Z") },
+    );
+    const { status, body } = await parseJson(res);
+    assert.equal(status, 200);
     assert.equal(body.resultado?.numero, NUMERO_NUEVO);
     assert.equal(body.resultado?.origen, "MANUAL");
     assert.equal(db.stats.createManualCalls, 1);
-    assert.equal(db.stats.createCalls, 1);
-    assert.equal(db.stats.auditCreates, 1);
     assert.equal(db.audits[0]!.accion, "CREAR_RESULTADO");
+  });
+
+  it("modificar programación pendiente vía Guardar futuro", async () => {
+    const db = makeFakePrisma(
+      [],
+      undefined,
+      [
+        {
+          id: "sch-1",
+          fecha: FECHA,
+          hora: HORA,
+          numero: NUMERO_ACTUAL,
+          estado: "PENDIENTE",
+          resultadoId: null,
+          createdById: "admin-http-test",
+        },
+      ],
+    );
+    const { deps } = depsFor(db, async () => adminActor());
+    const res = await postAdminResultadosWithDeps(
+      jsonRequest({
+        fecha: FECHA_STR,
+        hora: HORA,
+        numero: NUMERO_NUEVO,
+      }),
+      { ...deps, ahora: new Date("2026-01-01T12:00:00.000Z") },
+    );
+    const { status, body } = await parseJson(res);
+    assert.equal(status, 200);
+    assert.equal(db.getSchedule(FECHA, HORA)?.numero, NUMERO_NUEVO);
+    assert.equal(db.audits[0]!.accion, "MODIFICAR_PROGRAMACION");
+    assert.equal(
+      (body as { programacion?: { action?: string } }).programacion?.action,
+      "updated",
+    );
+  });
+
+  it("cancelar programación pendiente", async () => {
+    const db = makeFakePrisma(
+      [],
+      undefined,
+      [
+        {
+          id: "sch-1",
+          fecha: FECHA,
+          hora: HORA,
+          numero: NUMERO_ACTUAL,
+          estado: "PENDIENTE",
+          resultadoId: null,
+          createdById: "admin-http-test",
+        },
+      ],
+    );
+    const { deps } = depsFor(db, async () => adminActor());
+    const res = await postAdminResultadosWithDeps(
+      jsonRequest({
+        fecha: FECHA_STR,
+        hora: HORA,
+        action: "cancelProgramacion",
+      }),
+      deps,
+    );
+    const { status, body } = await parseJson(res);
+    assert.equal(status, 200);
+    assert.equal(db.getSchedule(FECHA, HORA)?.estado, "CANCELADO");
+    assert.equal(db.audits[0]!.accion, "CANCELAR_PROGRAMACION");
+    assert.equal(
+      (body as { programacion?: { estado?: string } }).programacion?.estado,
+      "CANCELADO",
+    );
+  });
+
+  it("rechaza cancelar programación ya PUBLICADO", async () => {
+    const db = makeFakePrisma(
+      [],
+      undefined,
+      [
+        {
+          id: "sch-1",
+          fecha: FECHA,
+          hora: HORA,
+          numero: NUMERO_ACTUAL,
+          estado: "PUBLICADO",
+          resultadoId: "r1",
+          createdById: "admin-http-test",
+        },
+      ],
+    );
+    const { deps } = depsFor(db, async () => adminActor());
+    const res = await postAdminResultadosWithDeps(
+      jsonRequest({
+        fecha: FECHA_STR,
+        hora: HORA,
+        action: "cancelProgramacion",
+      }),
+      deps,
+    );
+    const { status, body } = await parseJson(res);
+    assertRejected(status, body, 409, "SCHEDULE_NOT_MODIFIABLE");
+    assert.equal(db.getSchedule(FECHA, HORA)?.estado, "PUBLICADO");
+    assert.equal(db.audits.length, 0);
+  });
+
+  it("rechaza programar si ya hay Resultado publicado", async () => {
+    const db = makeFakePrisma([seedPublicado()]);
+    const { deps } = depsFor(db, async () => adminActor());
+    const res = await postAdminResultadosWithDeps(
+      jsonRequest({
+        fecha: FECHA_STR,
+        hora: HORA,
+        numero: NUMERO_NUEVO,
+      }),
+      { ...deps, ahora: new Date("2026-01-01T12:00:00.000Z") },
+    );
+    const { status, body } = await parseJson(res);
+    assertRejected(status, body, 409, "CORRECTION_REQUIRED");
+    assert.equal(db.stats.scheduleCreateCalls, 0);
+    assert.equal(db.stats.upsertScheduleCalls, 0);
   });
 
   it("catálogo incompleto → rechaza create sin escrituras", async () => {

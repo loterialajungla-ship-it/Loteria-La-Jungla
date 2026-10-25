@@ -104,6 +104,11 @@ function makeFakeDb(
         return catalog.map((a) => ({ numero: a.numero, nombre: a.nombre }));
       },
     },
+    resultadoProgramado: {
+      async updateMany() {
+        return { count: 0 };
+      },
+    },
     resultado: {
       async findUnique(args: {
         where: { fecha_hora?: { fecha: Date; hora: number }; id?: string };

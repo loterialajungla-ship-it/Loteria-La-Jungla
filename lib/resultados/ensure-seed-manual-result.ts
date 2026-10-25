@@ -14,7 +14,7 @@ export const SEED_MANUAL_RESULT_NUMERO = "03";
 
 type SeedResultDb = Pick<
   PrismaClient,
-  "resultado" | "auditoria" | "animal" | "$transaction"
+  "resultado" | "resultadoProgramado" | "auditoria" | "animal" | "$transaction"
 >;
 
 export type EnsureSeedManualResultArgs = {
