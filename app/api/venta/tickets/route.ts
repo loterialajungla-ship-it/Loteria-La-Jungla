@@ -78,10 +78,15 @@ export async function POST(request: Request) {
 
   try {
     const input = parseCreateTicketBody(raw);
-    const result = await createTicket({
-      ...input,
-      vendedorId: actor.userId,
-    });
+    const result = await createTicket(
+      {
+        ...input,
+        vendedorId: actor.userId,
+      },
+      new Date(),
+      prisma,
+      { actorRol: actor.user.rol },
+    );
     const status = result.idempotentReplay ? 200 : 201;
     return NextResponse.json(
       {

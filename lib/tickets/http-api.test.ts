@@ -11,6 +11,11 @@ import {
   TicketNotFoundError,
   TicketValidationError,
 } from "@/lib/tickets/errors";
+import {
+  CreditosConfigIncompleteError,
+  CreditosSchemaUnavailableError,
+  InsufficientCreditoSaldoError,
+} from "@/lib/creditos/errors";
 import { mapTicketErrorToHttp } from "@/lib/tickets/map-ticket-http-error";
 import { parseCreateTicketBody } from "@/lib/tickets/parse-create-ticket-body";
 
@@ -104,6 +109,24 @@ describe("mapTicketErrorToHttp", () => {
     );
     assert.equal(mapped.status, 409);
     assert.equal(mapped.body.error.code, "IDEMPOTENCY_PAYLOAD_MISMATCH");
+  });
+
+  it("mapea InsufficientCreditoSaldoError a 409", () => {
+    const mapped = mapTicketErrorToHttp(new InsufficientCreditoSaldoError());
+    assert.equal(mapped.status, 409);
+    assert.equal(mapped.body.error.code, "INSUFFICIENT_CREDITO_SALDO");
+  });
+
+  it("mapea CreditosSchemaUnavailableError a 503 (no 409 saldo)", () => {
+    const mapped = mapTicketErrorToHttp(new CreditosSchemaUnavailableError());
+    assert.equal(mapped.status, 503);
+    assert.equal(mapped.body.error.code, "CREDITOS_SCHEMA_UNAVAILABLE");
+  });
+
+  it("mapea CreditosConfigIncompleteError a 503", () => {
+    const mapped = mapTicketErrorToHttp(new CreditosConfigIncompleteError());
+    assert.equal(mapped.status, 503);
+    assert.equal(mapped.body.error.code, "CREDITOS_CONFIG_INCOMPLETE");
   });
 
   it("mapea InvalidAnulacionMotivoError a 400", () => {

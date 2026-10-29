@@ -1,7 +1,7 @@
 /**
  * Inventario determinista de archivos para `npm test` (runner unitario).
- * Expande directorios en disco y excluye integración/aceptación por sufijo,
- * de modo que archivos untracked o modificados no se cuelen por glob.
+ * Expande directorios en disco y excluye integración/aceptación/funcionales
+ * por sufijo, de modo que archivos untracked o modificados no se cuelen por glob.
  */
 
 import fs from "node:fs";
@@ -11,6 +11,7 @@ import path from "node:path";
 export const UNIT_TEST_EXCLUDED_SUFFIXES = [
   ".integration.test.ts",
   ".acceptance.test.ts",
+  ".functional.test.ts",
 ] as const;
 
 /**
@@ -33,6 +34,7 @@ export const UNIT_TEST_ROOTS: ReadonlyArray<{
   { relativeDir: path.join("lib", "db"), recursive: true },
   { relativeDir: path.join("lib", "http"), recursive: true },
   { relativeDir: path.join("lib", "resultados"), recursive: true },
+  { relativeDir: path.join("lib", "creditos"), recursive: true },
   { relativeDir: path.join("components", "tickets"), recursive: true },
   { relativeDir: path.join("app", "admin"), recursive: true },
 ];

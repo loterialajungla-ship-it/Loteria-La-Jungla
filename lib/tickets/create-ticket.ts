@@ -1,7 +1,10 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient, type RolUsuario } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { consumirCreditosTrasEmitirTicket } from "@/lib/creditos/aplicar-en-venta";
+import { createPrismaCreditosStore } from "@/lib/creditos/prisma-store";
+import type { CreditosStore } from "@/lib/creditos/store";
 import {
   AnimalNotFoundError,
   ConfigurationError,
@@ -151,9 +154,25 @@ function esConflictoIdempotencyKey(error: unknown): boolean {
 
 type CreateTicketDb = Pick<PrismaClient, "ticket" | "$transaction">;
 
+export type CreateTicketOptions = {
+  /**
+   * Rol del actor autenticado (sesión). ADMIN no consume créditos.
+   * Por defecto VENDEDOR (comportamiento estricto si se omite en tests).
+   */
+  actorRol?: RolUsuario;
+  /**
+   * Inyectable para unit tests. Por defecto: adaptador Prisma sobre la TX.
+   */
+  bindCreditsStore?: (tx: Prisma.TransactionClient) => CreditosStore;
+};
+
 /**
  * Crea un ticket EMITIDO con sus líneas en una sola transacción.
  * Idempotencia: UNIQUE(idempotencyKey) + requestHash + vendedorId de sesión.
+ *
+ * Créditos: si el control aplica (VENDEDOR, control activo, createdAt ≥ inicioEn),
+ * el consumo de `totalApostado` ocurre en la misma TX; saldo insuficiente → rollback.
+ * Replay idempotente no vuelve a consumir.
  *
  * `db` opcional: en integración/aceptación pasar el cliente de
  * `createIntegrationPrismaClient`. Por defecto usa `@/lib/prisma`
@@ -163,7 +182,13 @@ export async function createTicket(
   input: CreateTicketInput,
   ahora = new Date(),
   db: CreateTicketDb = prisma,
+  options: CreateTicketOptions = {},
 ): Promise<CreateTicketResult> {
+  const actorRol: RolUsuario = options.actorRol ?? "VENDEDOR";
+  const bindCreditsStore =
+    options.bindCreditsStore ??
+    ((tx: Prisma.TransactionClient) =>
+      createPrismaCreditosStore(tx, { alreadyInTransaction: true }));
   const fechaJuego = validarFechaJuegoHoy(input.fechaJuego, ahora);
   const lineasBasicas = validarLineasBasicas(input.lineas);
   const vendedorId =
@@ -296,6 +321,17 @@ export async function createTicket(
           totalApostado: created.totalApostado.toFixed(2),
           fechaJuego: fechaStr,
         },
+      });
+
+      // Corte por Ticket.createdAt (instante absoluto), no fechaJuego.
+      const creditsStore = bindCreditsStore(tx);
+      await consumirCreditosTrasEmitirTicket(creditsStore, {
+        actorRol,
+        vendedorId,
+        ticketId: created.id,
+        ticketCreatedAt: created.createdAt,
+        totalApostado: created.totalApostado,
+        ahora,
       });
 
       return created;

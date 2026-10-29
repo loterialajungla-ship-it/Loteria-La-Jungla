@@ -1,6 +1,10 @@
-import type { PrismaClient, EstadoTicket } from "@prisma/client";
+import type { Prisma, PrismaClient, EstadoTicket } from "@prisma/client";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { devolverCreditosPorAnulacion } from "@/lib/creditos/operaciones";
+import { createPrismaCreditosStore } from "@/lib/creditos/prisma-store";
+import { rethrowCreditosSchemaOrPropagate } from "@/lib/creditos/schema-guard";
+import type { CreditosStore } from "@/lib/creditos/store";
 import {
   TicketAlreadyAnuladoError,
   TicketNotFoundError,
@@ -9,6 +13,10 @@ import { validarMotivoAnulacion } from "@/lib/tickets/admin-ticket-query";
 import { moneyToFixed2 } from "@/lib/tickets/ticket-liquidation";
 
 type Db = Pick<PrismaClient, "ticket" | "auditoria" | "$transaction">;
+
+export type AnularTicketOptions = {
+  bindCreditsStore?: (tx: Prisma.TransactionClient) => CreditosStore;
+};
 
 export type TicketAnuladoResult = {
   id: string;
@@ -44,6 +52,7 @@ export async function anularTicket(
     anuladoPorId?: string | null;
     ahora?: Date;
   },
+  options: AnularTicketOptions = {},
 ): Promise<TicketAnuladoResult> {
   const id = args.id.trim();
   if (!id) throw new TicketNotFoundError();
@@ -51,6 +60,10 @@ export async function anularTicket(
   const motivo = validarMotivoAnulacion(args.motivo);
   const ahora = args.ahora ?? new Date();
   const anuladoPorId = args.anuladoPorId ?? null;
+  const bindCreditsStore =
+    options.bindCreditsStore ??
+    ((tx: Prisma.TransactionClient) =>
+      createPrismaCreditosStore(tx, { alreadyInTransaction: true }));
 
   return db.$transaction(async (tx) => {
     const updated = await tx.ticket.updateMany({
@@ -82,6 +95,20 @@ export async function anularTicket(
             anuladoAt: ticket.anuladoAt.toISOString(),
           },
         });
+      }
+
+      // Devolución solo si hubo CONSUMO_VENTA; idempotente; misma TX.
+      // Cualquier fallo (esquema ausente, infra, dominio) → rollback: no se
+      // confirma ANULADO con el libro desincronizado.
+      const creditsStore = bindCreditsStore(tx);
+      try {
+        await devolverCreditosPorAnulacion(creditsStore, {
+          ticketId: ticket.id,
+          actorAdminId: anuladoPorId,
+          ahora,
+        });
+      } catch (error) {
+        rethrowCreditosSchemaOrPropagate(error);
       }
 
       return {

@@ -14,6 +14,9 @@
     "test": "tsx scripts/run-unit-tests.ts",
     "test:integration": "tsx scripts/run-integration-tests.ts",
     "test:acceptance": "tsx scripts/run-acceptance-tests.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:creditos": "playwright test --config=playwright.config.ts",
+    "test:e2e:install-browser": "playwright install chromium",
     "bootstrap:admin": "tsx scripts/bootstrap-admin.ts",
     "bootstrap:admin:production": "tsx scripts/bootstrap-admin-production.ts",
     "ensure:test-admin": "tsx scripts/ensure-test-admin.ts",
@@ -33,6 +36,7 @@
     "react-dom": "^18"
   },
   "devDependencies": {
+    "@playwright/test": "1.49.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
