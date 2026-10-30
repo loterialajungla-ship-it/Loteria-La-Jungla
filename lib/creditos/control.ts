@@ -8,7 +8,7 @@
  * “inicio del día D en America/Caracas” debe convertir ese instante local a UTC
  * antes de persistir (fase admin posterior).
  */
-import { Prisma, type RolUsuario } from "@prisma/client";
+import { Prisma, type RolUsuario, type TipoCreditoMovimiento } from "@prisma/client";
 import { moneyEq, toCreditoDecimal } from "@/lib/creditos/money";
 
 export type CreditosControlSnapshot = {
@@ -17,6 +17,26 @@ export type CreditosControlSnapshot = {
   inicioEn: Date | null;
   umbralSaldoBajo: Prisma.Decimal | null;
 };
+
+/**
+ * Orígenes no corregibles en v1: el ciclo venta↔anulación ya liquida
+ * CONSUMO / DEVOLUCION de forma íntegra e idempotente. Una CORRECCION
+ * sobre ellos permitiría sobrerreembolso o sub-reembolso al anular.
+ */
+export const TIPOS_ORIGEN_CORRECCION_PROHIBIDOS = [
+  "CONSUMO_VENTA",
+  "DEVOLUCION_ANULACION",
+] as const satisfies ReadonlyArray<TipoCreditoMovimiento>;
+
+export type TipoOrigenCorreccionProhibido =
+  (typeof TIPOS_ORIGEN_CORRECCION_PROHIBIDOS)[number];
+
+/** ASIGNACION, RETIRO y CORRECCION sí admiten compensación administrativa. */
+export function esTipoOrigenCorregible(tipo: TipoCreditoMovimiento): boolean {
+  return !(TIPOS_ORIGEN_CORRECCION_PROHIBIDOS as readonly string[]).includes(
+    tipo,
+  );
+}
 
 /**
  * ¿La venta consumiría créditos si se integrara el flujo?

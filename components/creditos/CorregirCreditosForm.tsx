@@ -42,15 +42,20 @@ export function CorregirCreditosForm({
   const fingerprintRef = useRef<string | null>(null);
   const guardRef = useRef(createSubmitGuard());
 
-  // Candidatos en esta página: el backend permite cualquier movimiento del
-  // vendedor, pero rechaza un segundo CORRECCION sobre el mismo origen.
-  // Solo podemos ocultar orígenes ya corregidos si la corrección está en esta página.
+  // Candidatos: ASIGNACION / RETIRO / CORRECCION. El backend rechaza
+  // CONSUMO_VENTA y DEVOLUCION_ANULACION, y un segundo CORRECCION por origen.
+  // Solo ocultamos orígenes ya corregidos si la corrección está en esta página.
   const yaCorregidos = new Set(
     movimientos
       .filter((m) => m.tipo === "CORRECCION" && m.movimientoOrigenId)
       .map((m) => m.movimientoOrigenId as string),
   );
-  const candidatos = movimientos.filter((m) => !yaCorregidos.has(m.id));
+  const candidatos = movimientos.filter(
+    (m) =>
+      !yaCorregidos.has(m.id) &&
+      m.tipo !== "CONSUMO_VENTA" &&
+      m.tipo !== "DEVOLUCION_ANULACION",
+  );
   const origen = candidatos.find((m) => m.id === movimientoOrigenId);
 
   function ensureKey(fp: string): string {

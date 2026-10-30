@@ -9,6 +9,7 @@ import { cuentaCoherenteConLibro } from "@/lib/creditos/control";
 import {
   InsufficientCreditoSaldoError,
   CreditoIdempotencyConflictError,
+  CreditoValidationError,
   CreditoVendedorRequeridoError,
   CreditoConfigError,
 } from "@/lib/creditos/errors";
@@ -144,6 +145,165 @@ describe("correcciones e historial inmutable", () => {
     assert.equal(movimientos.length, 2);
     assert.equal(movimientos[0]!.id, a.movimiento.id);
     assert.equal(movimientos[0]!.importe.toFixed(2), "50.00");
+  });
+
+  it("permite corrección sobre RETIRO", async () => {
+    const store = createMemoryCreditosStore();
+    await asignarCreditos(store, {
+      vendedorId: "vend-1",
+      importe: "40",
+      actorAdminId: "admin-1",
+    });
+    const retiro = await retirarCreditos(store, {
+      vendedorId: "vend-1",
+      importe: "10",
+      actorAdminId: "admin-1",
+    });
+    const corr = await registrarCorreccionCredito(store, {
+      vendedorId: "vend-1",
+      importe: "3",
+      efecto: "AUMENTAR",
+      actorAdminId: "admin-1",
+      movimientoOrigenId: retiro.movimiento.id,
+      motivo: "retiro parcial revertido",
+    });
+    assert.equal(corr.movimiento.tipo, "CORRECCION");
+    assert.equal(corr.cuenta.saldoDisponible.toFixed(2), "33.00");
+  });
+
+  it("rechaza corrección sobre CONSUMO_VENTA sin mutar saldo ni libro", async () => {
+    const store = createMemoryCreditosStore();
+    await asignarCreditos(store, {
+      vendedorId: "vend-1",
+      importe: "50",
+      actorAdminId: "admin-1",
+    });
+    const consumo = await consumirCreditosPorVenta(store, {
+      vendedorId: "vend-1",
+      ticketId: "t-corr-consumo",
+      importe: "12",
+    });
+    const before = await consultarSaldoYHistorial(store, "vend-1");
+    await assert.rejects(
+      () =>
+        registrarCorreccionCredito(store, {
+          vendedorId: "vend-1",
+          importe: "12",
+          efecto: "AUMENTAR",
+          actorAdminId: "admin-1",
+          movimientoOrigenId: consumo.movimiento.id,
+          idempotencyKey: "11111111-1111-4111-8111-111111111101",
+        }),
+      (e: unknown) =>
+        e instanceof CreditoValidationError &&
+        e.code === "CREDITO_ORIGEN_NO_CORREGIBLE",
+    );
+    const after = await consultarSaldoYHistorial(store, "vend-1");
+    assert.equal(
+      after.cuenta?.saldoDisponible.toFixed(2),
+      before.cuenta?.saldoDisponible.toFixed(2),
+    );
+    assert.equal(after.movimientos.length, before.movimientos.length);
+    assert.equal(
+      after.movimientos.filter((m) => m.tipo === "CORRECCION").length,
+      0,
+    );
+  });
+
+  it("rechaza corrección sobre DEVOLUCION_ANULACION sin mutar saldo ni libro", async () => {
+    const store = createMemoryCreditosStore();
+    await asignarCreditos(store, {
+      vendedorId: "vend-1",
+      importe: "40",
+      actorAdminId: "admin-1",
+    });
+    await consumirCreditosPorVenta(store, {
+      vendedorId: "vend-1",
+      ticketId: "t-corr-dev",
+      importe: "15",
+    });
+    const dev = await devolverCreditosPorAnulacion(store, {
+      ticketId: "t-corr-dev",
+      actorAdminId: "admin-1",
+    });
+    assert.ok(dev.movimiento);
+    const before = await consultarSaldoYHistorial(store, "vend-1");
+    await assert.rejects(
+      () =>
+        registrarCorreccionCredito(store, {
+          vendedorId: "vend-1",
+          importe: "5",
+          efecto: "DISMINUIR",
+          actorAdminId: "admin-1",
+          movimientoOrigenId: dev.movimiento!.id,
+        }),
+      (e: unknown) =>
+        e instanceof CreditoValidationError &&
+        e.code === "CREDITO_ORIGEN_NO_CORREGIBLE",
+    );
+    const after = await consultarSaldoYHistorial(store, "vend-1");
+    assert.equal(after.cuenta?.saldoDisponible.toFixed(2), "40.00");
+    assert.equal(after.movimientos.length, before.movimientos.length);
+  });
+
+  it("tras rechazo sobre CONSUMO, la devolución por anulación sigue íntegra", async () => {
+    const store = createMemoryCreditosStore();
+    await asignarCreditos(store, {
+      vendedorId: "vend-1",
+      importe: "30",
+      actorAdminId: "admin-1",
+    });
+    const consumo = await consumirCreditosPorVenta(store, {
+      vendedorId: "vend-1",
+      ticketId: "t-corr-then-dev",
+      importe: "10",
+    });
+    await assert.rejects(() =>
+      registrarCorreccionCredito(store, {
+        vendedorId: "vend-1",
+        importe: "10",
+        efecto: "AUMENTAR",
+        actorAdminId: "admin-1",
+        movimientoOrigenId: consumo.movimiento.id,
+      }),
+    );
+    const d = await devolverCreditosPorAnulacion(store, {
+      ticketId: "t-corr-then-dev",
+      actorAdminId: "admin-1",
+    });
+    assert.equal(d.skippedSinConsumo, false);
+    assert.equal(d.cuenta?.saldoDisponible.toFixed(2), "30.00");
+    assert.equal(d.movimiento?.tipo, "DEVOLUCION_ANULACION");
+  });
+
+  it("idempotencia de corrección válida: misma key → replay sin duplicar", async () => {
+    const store = createMemoryCreditosStore();
+    const a = await asignarCreditos(store, {
+      vendedorId: "vend-1",
+      importe: "20",
+      actorAdminId: "admin-1",
+    });
+    const key = "22222222-2222-4222-8222-222222222201";
+    const c1 = await registrarCorreccionCredito(store, {
+      vendedorId: "vend-1",
+      importe: "2",
+      efecto: "AUMENTAR",
+      actorAdminId: "admin-1",
+      movimientoOrigenId: a.movimiento.id,
+      idempotencyKey: key,
+    });
+    const c2 = await registrarCorreccionCredito(store, {
+      vendedorId: "vend-1",
+      importe: "2",
+      efecto: "AUMENTAR",
+      actorAdminId: "admin-1",
+      movimientoOrigenId: a.movimiento.id,
+      idempotencyKey: key,
+    });
+    assert.equal(c1.movimiento.id, c2.movimiento.id);
+    assert.equal(c2.cuenta.saldoDisponible.toFixed(2), "22.00");
+    const { movimientos } = await consultarSaldoYHistorial(store, "vend-1");
+    assert.equal(movimientos.filter((m) => m.tipo === "CORRECCION").length, 1);
   });
 
   it("corrección que dejaría saldo negativo se rechaza", async () => {

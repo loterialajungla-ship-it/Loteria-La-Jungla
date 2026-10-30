@@ -4,9 +4,20 @@ import { Prisma } from "@prisma/client";
 import {
   cuentaCoherenteConLibro,
   esSaldoBajo,
+  esTipoOrigenCorregible,
   saldoEsperadoDesdeMovimientos,
   ventaSujetaAControlCreditos,
 } from "@/lib/creditos/control";
+
+describe("esTipoOrigenCorregible", () => {
+  it("permite ASIGNACION, RETIRO y CORRECCION; rechaza consumo y devolución", () => {
+    assert.equal(esTipoOrigenCorregible("ASIGNACION"), true);
+    assert.equal(esTipoOrigenCorregible("RETIRO"), true);
+    assert.equal(esTipoOrigenCorregible("CORRECCION"), true);
+    assert.equal(esTipoOrigenCorregible("CONSUMO_VENTA"), false);
+    assert.equal(esTipoOrigenCorregible("DEVOLUCION_ANULACION"), false);
+  });
+});
 
 describe("ventaSujetaAControlCreditos", () => {
   const inicio = new Date("2026-11-01T04:00:00.000Z"); // ej. medianoche Caracas UTC-4

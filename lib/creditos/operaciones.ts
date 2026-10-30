@@ -3,6 +3,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
+import { esTipoOrigenCorregible } from "@/lib/creditos/control";
 import {
   CreditoDuplicateTicketMovimientoError,
   CreditoIdempotencyConflictError,
@@ -215,6 +216,9 @@ export async function retirarCreditos(
 /**
  * Corrección compensatoria: no borra el movimiento original.
  * AUMENTAR → crédito; DISMINUIR → débito (rechaza si dejaría saldo < 0).
+ *
+ * v1: no se corrigen CONSUMO_VENTA ni DEVOLUCION_ANULACION (el reembolso
+ * por anulación ya es íntegro e idempotente sobre el consumo).
  */
 export async function registrarCorreccionCredito(
   store: CreditosStore,
@@ -271,10 +275,17 @@ export async function registrarCorreccionCredito(
       );
     }
 
-    // Bloqueo de cuenta antes de la comprobación anti-duplicado (evita TOCTOU
-    // concurrente: dos CORRECCION distintas sobre el mismo origen).
+    // Bloqueo de cuenta antes de política de origen y anti-duplicado
+    // (evita TOCTOU concurrente: corrección vs otra corrección / anulación).
     await tx.ensureCuenta(vendedorId, ahora);
     await tx.lockCuentaForUpdate(vendedorId);
+
+    if (!esTipoOrigenCorregible(origen.tipo)) {
+      throw new CreditoValidationError(
+        `No se puede corregir un movimiento de tipo ${origen.tipo}. El ciclo venta/anulación ya liquida consumo y devolución; use anulación o una corrección sobre asignación/retiro.`,
+        "CREDITO_ORIGEN_NO_CORREGIBLE",
+      );
+    }
 
     // Una sola corrección por movimiento origen (idempotencia vía key aparte).
     const previos = await tx.listMovimientosByVendedor(vendedorId);

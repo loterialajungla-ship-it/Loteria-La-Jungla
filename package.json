@@ -13,6 +13,7 @@
     "postinstall": "prisma generate",
     "test": "tsx scripts/run-unit-tests.ts",
     "test:integration": "tsx scripts/run-integration-tests.ts",
+    "test:integration:creditos": "tsx scripts/run-creditos-integration.ts",
     "test:acceptance": "tsx scripts/run-acceptance-tests.ts",
     "test:e2e": "playwright test",
     "test:e2e:creditos": "playwright test --config=playwright.config.ts",
