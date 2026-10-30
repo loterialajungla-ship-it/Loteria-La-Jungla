@@ -12,6 +12,7 @@ import {
   TicketAlreadyAnuladoError,
   TicketDomainError,
   TicketNotFoundError,
+  TicketSellerNotAllowedError,
   TicketValidationError,
 } from "@/lib/tickets/errors";
 
@@ -51,6 +52,10 @@ export function mapTicketErrorToHttp(error: unknown): {
 
   if (error instanceof TicketAlreadyAnuladoError) {
     return jsonError(409, error.code, error.message);
+  }
+
+  if (error instanceof TicketSellerNotAllowedError) {
+    return jsonError(403, error.code, error.message);
   }
 
   if (error instanceof IdempotencyConflictError) {

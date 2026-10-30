@@ -147,6 +147,16 @@ Los tres deben ser **idénticos** tras `credits:ensure-config`. El comando no to
 
 No activar el control en este smoke.
 
+### Obligatorio tras migrar créditos (H1 — sin cambiar política ADMIN)
+
+Tras aplicar las migraciones de créditos en un entorno, el smoke de **VENDEDOR** es **obligatorio** antes de dar por válido el entorno:
+
+- Login VENDEDOR activo → emitir ticket de prueba.
+- Confirmar respuesta OK y (con control apagado) ausencia de `CONSUMO_VENTA`.
+- ADMIN sigue exento de consumo; **no** se introduce fail-closed para ventas ADMIN.
+
+Sin ese smoke VENDEDOR no se debe activar el control ni promover el entorno.
+
 ---
 
 ## 9. Preparar saldos

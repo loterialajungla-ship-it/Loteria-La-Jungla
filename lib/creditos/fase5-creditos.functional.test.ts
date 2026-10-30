@@ -523,8 +523,10 @@ describe("Fase 5 — créditos funcionales TEST", { skip: !ENABLED }, () => {
       where: { id: vendB.id },
       data: { activo: false },
     });
-    // createTicket no mira activo; la venta real pasa por sesión.
-    // Verificamos sesión + que saldo/historial no se tocan al desactivar.
+    // H3: createTicket valida el usuario persistido (existe, activo, rol =
+    // actorRol de sesión) antes de emitir. La venta HTTP sigue pasando
+    // además por sesión (usuario inactivo → resolveSession null).
+    // Aquí verificamos sesión + que saldo/historial no se tocan al desactivar.
     const sess = await ctx.openSession(vendB.id);
     assert.equal(await resolveSessionByToken(ctx.db, sess.token), null);
     const after = await consultarSaldoYHistorial(ctx.credits, vendB.id);

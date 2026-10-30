@@ -238,7 +238,54 @@ describe("anularTicket + créditos", () => {
     );
   });
 
-  it("esquema ausente con consumo previo: anulación rechazada y ticket sigue EMITIDO", async () => {
+  it("H6: tablas ausentes + P2021 al buscar consumo → anula sin devolución", async () => {
+    const credits = createMemoryCreditosStore();
+    const db = fakeAnularDb({
+      ticket: {
+        id: "tk-no-schema",
+        numeroVisible: "LJ-NS",
+        fechaJuego: FECHA,
+        totalApostado: "4.00",
+        estado: "EMITIDO",
+        anuladoAt: null,
+        anuladoPorId: null,
+        motivoAnulacion: null,
+      },
+    });
+
+    const schemaMissingFind: CreditosStore = {
+      ...credits,
+      runInTransaction: async <T>(fn: (tx: CreditosStore) => Promise<T>) =>
+        fn({
+          ...credits,
+          findMovimientoByTicketTipo: async () => {
+            throw new Prisma.PrismaClientKnownRequestError(
+              "The table `public.CreditoMovimiento` does not exist in the current database.",
+              {
+                code: "P2021",
+                clientVersion: "5.22.0",
+                meta: { table: "CreditoMovimiento" },
+              },
+            );
+          },
+        }),
+    };
+
+    await anularTicket(
+      db as never,
+      { id: "tk-no-schema", motivo: "sin esquema", anuladoPorId: "admin" },
+      { bindCreditsStore: () => schemaMissingFind },
+    );
+
+    assert.equal(db.getEstado(), "ANULADO");
+    const { movimientos } = await consultarSaldoYHistorial(credits, "vend");
+    assert.equal(
+      movimientos.filter((m) => m.tipo === "DEVOLUCION_ANULACION").length,
+      0,
+    );
+  });
+
+  it("H6: consumo existente + P2021 al insertar devolución → anulación rechazada, EMITIDO", async () => {
     const credits = createMemoryCreditosStore();
     await actualizarCreditosConfig(credits, {
       controlActivo: true,
@@ -269,18 +316,22 @@ describe("anularTicket + créditos", () => {
       },
     });
 
-    const schemaBoom: CreditosStore = {
+    const schemaBoomOnInsert: CreditosStore = {
       ...credits,
-      runInTransaction: async <T>(): Promise<T> => {
-        throw new Prisma.PrismaClientKnownRequestError(
-          'The table `public.CreditoMovimiento` does not exist in the current database.',
-          {
-            code: "P2021",
-            clientVersion: "5.22.0",
-            meta: { table: "CreditoMovimiento" },
+      runInTransaction: async <T>(fn: (tx: CreditosStore) => Promise<T>) =>
+        fn({
+          ...credits,
+          ajustarSaldoAtomico: async () => {
+            throw new Prisma.PrismaClientKnownRequestError(
+              "The table `public.VendedorCreditoCuenta` does not exist in the current database.",
+              {
+                code: "P2021",
+                clientVersion: "5.22.0",
+                meta: { table: "VendedorCreditoCuenta" },
+              },
+            );
           },
-        );
-      },
+        }),
     };
 
     await assert.rejects(
@@ -288,7 +339,7 @@ describe("anularTicket + créditos", () => {
         anularTicket(
           db as never,
           { id: "tk-schema", motivo: "x", anuladoPorId: "admin" },
-          { bindCreditsStore: () => schemaBoom },
+          { bindCreditsStore: () => schemaBoomOnInsert },
         ),
       (e: unknown) => e instanceof CreditosSchemaUnavailableError,
     );
@@ -305,7 +356,46 @@ describe("anularTicket + créditos", () => {
     );
   });
 
-  it("si la devolución falla, la anulación no queda confirmada (rollback TX)", async () => {
+  it("H6: error genérico de conexión al buscar consumo → anulación rechazada", async () => {
+    const credits = createMemoryCreditosStore();
+    const db = fakeAnularDb({
+      ticket: {
+        id: "tk-conn",
+        numeroVisible: "LJ-C",
+        fechaJuego: FECHA,
+        totalApostado: "3.00",
+        estado: "EMITIDO",
+        anuladoAt: null,
+        anuladoPorId: null,
+        motivoAnulacion: null,
+      },
+    });
+
+    const connBoom: CreditosStore = {
+      ...credits,
+      runInTransaction: async <T>(fn: (tx: CreditosStore) => Promise<T>) =>
+        fn({
+          ...credits,
+          findMovimientoByTicketTipo: async () => {
+            throw new Error("ECONNREFUSED créditos");
+          },
+        }),
+    };
+
+    await assert.rejects(
+      () =>
+        anularTicket(
+          db as never,
+          { id: "tk-conn", motivo: "x", anuladoPorId: "admin" },
+          { bindCreditsStore: () => connBoom },
+        ),
+      (e: unknown) =>
+        e instanceof Error && e.message.includes("ECONNREFUSED"),
+    );
+    assert.equal(db.getEstado(), "EMITIDO");
+  });
+
+  it("si la devolución falla (integridad), la anulación no queda confirmada (rollback TX)", async () => {
     const credits = createMemoryCreditosStore();
     await actualizarCreditosConfig(credits, {
       controlActivo: true,
@@ -336,19 +426,29 @@ describe("anularTicket + créditos", () => {
       },
     });
 
-    // Simula fallo de devolución: store que revienta al devolver.
-    const boomStore = {
+    const boomStore: CreditosStore = {
       ...credits,
-      runInTransaction: async <T>(): Promise<T> => {
-        throw new Error("fallo forzado devolución");
-      },
+      runInTransaction: async <T>(fn: (tx: CreditosStore) => Promise<T>) =>
+        fn({
+          ...credits,
+          insertMovimiento: async () => {
+            throw new Prisma.PrismaClientKnownRequestError(
+              "Unique constraint failed",
+              {
+                code: "P2002",
+                clientVersion: "5.22.0",
+                meta: { target: ["ticketId", "tipo"] },
+              },
+            );
+          },
+        }),
     };
 
     await assert.rejects(() =>
       anularTicket(
         base as never,
         { id: "tk-fail", motivo: "x", anuladoPorId: "admin" },
-        { bindCreditsStore: () => boomStore as never },
+        { bindCreditsStore: () => boomStore },
       ),
     );
 

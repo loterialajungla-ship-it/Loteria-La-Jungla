@@ -1,4 +1,7 @@
-export { createTicket } from "@/lib/tickets/create-ticket";
+export {
+  createTicket,
+  assertEmisorPuedeCrearTicket,
+} from "@/lib/tickets/create-ticket";
 export { getMultiplicadorPremio, CLAVE_MULTIPLICADOR_PREMIO } from "@/lib/tickets/ticket-config";
 export { generarCodigoPublico } from "@/lib/tickets/ticket-code";
 export { formatearNumeroVisible } from "@/lib/tickets/ticket-number";
@@ -59,6 +62,7 @@ export {
   TicketAlreadyAnuladoError,
   InvalidAnulacionMotivoError,
   IdempotencyConflictError,
+  TicketSellerNotAllowedError,
 } from "@/lib/tickets/errors";
 export { getOpenDrawHours } from "@/lib/tickets/get-open-draw-hours";
 export type { OpenDrawHoursResult } from "@/lib/tickets/get-open-draw-hours";

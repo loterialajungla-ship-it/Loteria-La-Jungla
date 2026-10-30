@@ -484,6 +484,52 @@ describe("consumo y devolución (dominio, no cableado a tickets)", () => {
     assert.equal(skip.movimiento, null);
   });
 
+  it("H6: P2021 solo en find CONSUMO → skippedSinConsumo sin inventar devolución", async () => {
+    const base = createMemoryCreditosStore();
+    const store = {
+      ...base,
+      runInTransaction: async <T>(
+        fn: (tx: typeof base) => Promise<T>,
+      ): Promise<T> =>
+        fn({
+          ...base,
+          findMovimientoByTicketTipo: async () => {
+            throw new Prisma.PrismaClientKnownRequestError(
+              "The table `public.CreditoMovimiento` does not exist in the current database.",
+              {
+                code: "P2021",
+                clientVersion: "5.22.0",
+                meta: { table: "CreditoMovimiento" },
+              },
+            );
+          },
+        }),
+    };
+    const r = await devolverCreditosPorAnulacion(store, { ticketId: "t-x" });
+    assert.equal(r.skippedSinConsumo, true);
+    assert.equal(r.movimiento, null);
+  });
+
+  it("H6: error genérico en find CONSUMO se propaga (no skipped)", async () => {
+    const base = createMemoryCreditosStore();
+    const store = {
+      ...base,
+      runInTransaction: async <T>(
+        fn: (tx: typeof base) => Promise<T>,
+      ): Promise<T> =>
+        fn({
+          ...base,
+          findMovimientoByTicketTipo: async () => {
+            throw new Error("timeout conexión");
+          },
+        }),
+    };
+    await assert.rejects(
+      () => devolverCreditosPorAnulacion(store, { ticketId: "t-y" }),
+      (e: unknown) => e instanceof Error && e.message.includes("timeout"),
+    );
+  });
+
   it("concurrencia: dos consumos paralelos no dejan saldo negativo", async () => {
     const store = createMemoryCreditosStore();
     await asignarCreditos(store, {

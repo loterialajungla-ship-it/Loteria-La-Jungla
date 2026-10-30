@@ -15,6 +15,7 @@ import {
   parseImporteCreditoPositivo,
   toCreditoDecimal,
 } from "@/lib/creditos/money";
+import { isCreditosSchemaMissing } from "@/lib/creditos/schema-guard";
 import type { CreditosStore } from "@/lib/creditos/store";
 import { ajustarEInsertarMovimiento } from "@/lib/creditos/tx-helpers";
 import type {
@@ -411,8 +412,13 @@ export async function consumirCreditosPorVenta(
 }
 
 /**
- * Devolución por anulación (dominio listo; aún no cableado a anularTicket).
+ * Devolución por anulación (misma TX que anularTicket).
  * Idempotente: un DEVOLUCION_ANULACION por ticket; requiere CONSUMO previo.
+ *
+ * Si la consulta inicial de CONSUMO_VENTA falla por esquema ausente (P2021),
+ * se trata como skippedSinConsumo: sin tablas de créditos no puede haber deuda
+ * registrada. Cualquier otro fallo (incl. esquema al insertar devolución) se
+ * propaga sin convertir en ausencia de consumo.
  */
 export async function devolverCreditosPorAnulacion(
   store: CreditosStore,
@@ -424,7 +430,7 @@ export async function devolverCreditosPorAnulacion(
 ): Promise<{
   cuenta: CreditoCuentaView | null;
   movimiento: CreditoMovimientoView | null;
-  /** true si no había consumo (p. ej. venta pre-control) → no-op. */
+  /** true si no había consumo (p. ej. venta pre-control o esquema ausente) → no-op. */
   skippedSinConsumo: boolean;
 }> {
   const ticketId = args.ticketId.trim();
@@ -434,10 +440,19 @@ export async function devolverCreditosPorAnulacion(
   const ahora = args.ahora ?? new Date();
 
   return store.runInTransaction(async (tx) => {
-    const consumo = await tx.findMovimientoByTicketTipo(
-      ticketId,
-      "CONSUMO_VENTA",
-    );
+    let consumo;
+    try {
+      consumo = await tx.findMovimientoByTicketTipo(
+        ticketId,
+        "CONSUMO_VENTA",
+      );
+    } catch (error) {
+      // Única captura de esquema ausente: solo la búsqueda inicial de consumo.
+      if (isCreditosSchemaMissing(error)) {
+        return { cuenta: null, movimiento: null, skippedSinConsumo: true };
+      }
+      throw error;
+    }
     if (!consumo) {
       return { cuenta: null, movimiento: null, skippedSinConsumo: true };
     }

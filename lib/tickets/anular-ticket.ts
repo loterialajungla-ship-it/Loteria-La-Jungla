@@ -98,8 +98,8 @@ export async function anularTicket(
       }
 
       // Devolución solo si hubo CONSUMO_VENTA; idempotente; misma TX.
-      // Cualquier fallo (esquema ausente, infra, dominio) → rollback: no se
-      // confirma ANULADO con el libro desincronizado.
+      // Esquema ausente en la búsqueda de consumo → skippedSinConsumo (OK).
+      // Si había consumo y falla la devolución (esquema/infra/dominio) → rollback.
       const creditsStore = bindCreditsStore(tx);
       try {
         await devolverCreditosPorAnulacion(creditsStore, {
