@@ -1,10 +1,18 @@
 import { Prisma } from "@prisma/client";
 import {
+  CreditoDomainError,
+  CreditoIdempotencyConflictError,
+  CreditosConfigIncompleteError,
+  CreditosSchemaUnavailableError,
+  InsufficientCreditoSaldoError,
+} from "@/lib/creditos/errors";
+import {
   ConfigurationError,
   IdempotencyConflictError,
   TicketAlreadyAnuladoError,
   TicketDomainError,
   TicketNotFoundError,
+  TicketSellerNotAllowedError,
   TicketValidationError,
 } from "@/lib/tickets/errors";
 
@@ -46,8 +54,32 @@ export function mapTicketErrorToHttp(error: unknown): {
     return jsonError(409, error.code, error.message);
   }
 
+  if (error instanceof TicketSellerNotAllowedError) {
+    return jsonError(403, error.code, error.message);
+  }
+
   if (error instanceof IdempotencyConflictError) {
     return jsonError(409, error.code, error.message);
+  }
+
+  if (error instanceof InsufficientCreditoSaldoError) {
+    return jsonError(409, error.code, error.message);
+  }
+
+  if (error instanceof CreditoIdempotencyConflictError) {
+    return jsonError(409, error.code, error.message);
+  }
+
+  if (error instanceof CreditosSchemaUnavailableError) {
+    return jsonError(503, error.code, error.message);
+  }
+
+  if (error instanceof CreditosConfigIncompleteError) {
+    return jsonError(503, error.code, error.message);
+  }
+
+  if (error instanceof CreditoDomainError) {
+    return jsonError(400, error.code, error.message);
   }
 
   if (error instanceof TicketValidationError) {

@@ -51,6 +51,7 @@ function listIntegrationTestFiles(): string[] {
   const dirs = [
     // Resultados automáticos primero: no depende del reloj real de ventas.
     path.join(ROOT, "lib", "resultados"),
+    path.join(ROOT, "lib", "creditos"),
     path.join(ROOT, "lib", "tickets", "integration"),
     path.join(ROOT, "lib", "auth"),
     path.join(ROOT, "lib", "reports"),

@@ -6,6 +6,12 @@
 .yarn/install-state.gz
 # testing
 /coverage
+/e2e/**/.run-state.json
+/e2e/**/test-results/
+/test-results/
+/playwright-report/
+/blob-report/
+
 # next.js
 /.next/
 /out/

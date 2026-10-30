@@ -117,3 +117,17 @@ export class IdempotencyConflictError extends TicketDomainError {
     this.name = "IdempotencyConflictError";
   }
 }
+
+/**
+ * Emisor no apto para createTicket (inexistente, inactivo o rol incompatible).
+ * Defensa en profundidad: no sustituye la autorización HTTP de sesión.
+ */
+export class TicketSellerNotAllowedError extends TicketDomainError {
+  constructor(
+    message = "El emisor no puede crear tickets.",
+    code = "SELLER_NOT_ALLOWED",
+  ) {
+    super(code, message);
+    this.name = "TicketSellerNotAllowedError";
+  }
+}

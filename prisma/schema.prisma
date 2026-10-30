@@ -194,7 +194,11 @@ model Usuario {
 
   resultadosProgramadosCreados ResultadoProgramado[] @relation("ResultadoProgramadoCreatedBy")
 
+  /// Cuenta de créditos del vendedor (1:1). Ausente hasta el primer ensure/asignación.
+  creditoCuenta VendedorCreditoCuenta?
 
+  /// Movimientos de crédito en los que este usuario actuó como ADMIN.
+  creditoMovimientosComoActor CreditoMovimiento[] @relation("CreditoMovimientoActorAdmin")
 
   @@index([rol, activo])
 
@@ -375,7 +379,8 @@ model Ticket {
 
   lineas            TicketLinea[]
 
-
+  /// Movimientos de crédito ligados a este ticket (consumo / devolución).
+  creditoMovimientos CreditoMovimiento[]
 
   @@index([fechaJuego])
 
@@ -421,5 +426,94 @@ model TicketLinea {
 
   @@index([fechaJuego, hora])
 
+}
+
+
+
+/// Tipos de movimiento del libro de créditos de vendedores (inmutable).
+enum TipoCreditoMovimiento {
+  ASIGNACION
+  RETIRO
+  CONSUMO_VENTA
+  DEVOLUCION_ANULACION
+  CORRECCION
+}
+
+
+
+/// Saldo materializado por vendedor. Proyección del libro CreditoMovimiento.
+/// Coherencia: saldoDisponible debe igualar la suma neta de movimientos
+/// (ASIGNACION/DEVOLUCION/CORRECCION+ − RETIRO/CONSUMO/CORRECCION−).
+model VendedorCreditoCuenta {
+  vendedorId      String   @id
+  vendedor        Usuario  @relation(fields: [vendedorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  /// Nunca negativo. Decimal monetario (misma precisión que Ticket.totalApostado).
+  saldoDisponible Decimal  @db.Decimal(12, 2)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  movimientos CreditoMovimiento[]
+}
+
+
+
+/// Libro mayor inmutable de créditos. No se borran ni alteran filas en operaciones normales.
+model CreditoMovimiento {
+  id         String               @id @default(cuid())
+  vendedorId String
+  cuenta     VendedorCreditoCuenta @relation(fields: [vendedorId], references: [vendedorId], onDelete: Restrict, onUpdate: Cascade)
+
+  tipo           TipoCreditoMovimiento
+  /// Siempre > 0. El signo lo determina el tipo (y el efecto en CORRECCION vía saldos).
+  importe        Decimal @db.Decimal(12, 2)
+  saldoAnterior  Decimal @db.Decimal(12, 2)
+  saldoPosterior Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+
+  /// ADMIN que asignó/retiró/corrigió. Null en CONSUMO_VENTA / DEVOLUCION_ANULACION del sistema.
+  actorAdminId String?
+  actorAdmin   Usuario? @relation("CreditoMovimientoActorAdmin", fields: [actorAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  ticketId String?
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Devolución o corrección: apunta al movimiento que se compensa.
+  movimientoOrigenId String?
+  movimientoOrigen   CreditoMovimiento?  @relation("CreditoMovimientoCadena", fields: [movimientoOrigenId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  movimientosHijos   CreditoMovimiento[] @relation("CreditoMovimientoCadena")
+
+  motivo String?
+
+  /// Idempotencia de operaciones administrativas (asignar/retirar/corregir).
+  idempotencyKey String? @unique
+
+  /// Un consumo y una devolución por ticket (NULL ticketId permitido varias veces en PG).
+  @@unique([ticketId, tipo])
+  @@index([vendedorId, createdAt])
+  @@index([tipo, createdAt])
+  @@index([movimientoOrigenId])
+  /// Además (solo SQL migración): UNIQUE parcial devolución por movimientoOrigenId.
+}
+
+
+
+/// Configuración singleton del control de créditos (id fijo = 1).
+/// controlActivo=false (default): se pueden preparar saldos sin consumir en ventas.
+/// inicioEn: instante UTC inequívoco; la venta sujeta usa Ticket.createdAt >= inicioEn
+/// (no fechaJuego). Interpretación de “día” en America/Caracas al elegir el instante
+/// (p. ej. medianoche Caracas → convertir a UTC al guardar). Null = sin inicio → no hay consumo.
+model CreditosConfig {
+  id Int @id @default(1)
+
+  controlActivo Boolean @default(false)
+
+  /// Instante absoluto (timestamptz). Null hasta configuración expresa del ADMIN.
+  inicioEn DateTime?
+
+  umbralSaldoBajo Decimal? @db.Decimal(12, 2)
+
+  updatedAt        DateTime @updatedAt
+  updatedByAdminId String?
 }
 

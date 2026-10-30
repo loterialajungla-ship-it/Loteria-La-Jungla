@@ -1,12 +1,16 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient, type RolUsuario } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { consumirCreditosTrasEmitirTicket } from "@/lib/creditos/aplicar-en-venta";
+import { createPrismaCreditosStore } from "@/lib/creditos/prisma-store";
+import type { CreditosStore } from "@/lib/creditos/store";
 import {
   AnimalNotFoundError,
   ConfigurationError,
   DrawClosedError,
   IdempotencyConflictError,
+  TicketSellerNotAllowedError,
 } from "@/lib/tickets/errors";
 import { getMultiplicadorPremio } from "@/lib/tickets/ticket-config";
 import { generarCodigoPublico } from "@/lib/tickets/ticket-code";
@@ -149,11 +153,68 @@ function esConflictoIdempotencyKey(error: unknown): boolean {
   return false;
 }
 
-type CreateTicketDb = Pick<PrismaClient, "ticket" | "$transaction">;
+type CreateTicketDb = Pick<PrismaClient, "ticket" | "usuario" | "$transaction">;
+
+export type CreateTicketOptions = {
+  /**
+   * Rol del actor autenticado (sesión). ADMIN no consume créditos.
+   * Por defecto VENDEDOR (comportamiento estricto si se omite en tests).
+   * No debe tomarse de un body HTTP.
+   */
+  actorRol?: RolUsuario;
+  /**
+   * Inyectable para unit tests. Por defecto: adaptador Prisma sobre la TX.
+   */
+  bindCreditsStore?: (tx: Prisma.TransactionClient) => CreditosStore;
+};
+
+/** Puerto mínimo para validar emisor (inyectable en unit tests). */
+export type EmisorTicketLookup = {
+  usuario: {
+    findUnique: (args: {
+      where: { id: string };
+      select?: { id: true; rol: true; activo: true };
+    }) => Promise<{ id: string; rol: RolUsuario; activo: boolean } | null>;
+  };
+};
+
+/**
+ * Defensa en profundidad: el emisor debe existir, estar activo y conservar
+ * el rol de sesión (ADMIN o VENDEDOR). No confía en un rol enviado en el body.
+ */
+export async function assertEmisorPuedeCrearTicket(
+  db: EmisorTicketLookup,
+  args: { vendedorId: string; actorRol: RolUsuario },
+): Promise<void> {
+  const user = await db.usuario.findUnique({
+    where: { id: args.vendedorId },
+    select: { id: true, rol: true, activo: true },
+  });
+  if (!user) {
+    throw new TicketSellerNotAllowedError("Usuario emisor no encontrado.");
+  }
+  if (!user.activo) {
+    throw new TicketSellerNotAllowedError("El usuario emisor está inactivo.");
+  }
+  if (user.rol !== args.actorRol) {
+    throw new TicketSellerNotAllowedError(
+      "Rol del emisor incompatible con la sesión.",
+    );
+  }
+  if (args.actorRol !== "ADMIN" && args.actorRol !== "VENDEDOR") {
+    throw new TicketSellerNotAllowedError(
+      "Rol no autorizado para emitir tickets.",
+    );
+  }
+}
 
 /**
  * Crea un ticket EMITIDO con sus líneas en una sola transacción.
  * Idempotencia: UNIQUE(idempotencyKey) + requestHash + vendedorId de sesión.
+ *
+ * Créditos: si el control aplica (VENDEDOR, control activo, createdAt ≥ inicioEn),
+ * el consumo de `totalApostado` ocurre en la misma TX; saldo insuficiente → rollback.
+ * Replay idempotente no vuelve a consumir. ADMIN conserva exención de créditos.
  *
  * `db` opcional: en integración/aceptación pasar el cliente de
  * `createIntegrationPrismaClient`. Por defecto usa `@/lib/prisma`
@@ -163,7 +224,13 @@ export async function createTicket(
   input: CreateTicketInput,
   ahora = new Date(),
   db: CreateTicketDb = prisma,
+  options: CreateTicketOptions = {},
 ): Promise<CreateTicketResult> {
+  const actorRol: RolUsuario = options.actorRol ?? "VENDEDOR";
+  const bindCreditsStore =
+    options.bindCreditsStore ??
+    ((tx: Prisma.TransactionClient) =>
+      createPrismaCreditosStore(tx, { alreadyInTransaction: true }));
   const fechaJuego = validarFechaJuegoHoy(input.fechaJuego, ahora);
   const lineasBasicas = validarLineasBasicas(input.lineas);
   const vendedorId =
@@ -214,6 +281,12 @@ export async function createTicket(
       requestHash,
     });
   }
+
+  // Nueva emisión: emisor debe existir, estar activo y conservar rol de sesión.
+  // Deuda técnica (TOCTOU): la comprobación ocurre antes de $transaction;
+  // existe una ventana teórica si el usuario se desactiva entre assert y create.
+  // No se refuerza el aislamiento aquí (FASE 7.47); la auth HTTP sigue exigiendo activo.
+  await assertEmisorPuedeCrearTicket(db, { vendedorId, actorRol });
 
   try {
     const ticket = await db.$transaction(
@@ -296,6 +369,17 @@ export async function createTicket(
           totalApostado: created.totalApostado.toFixed(2),
           fechaJuego: fechaStr,
         },
+      });
+
+      // Corte por Ticket.createdAt (instante absoluto), no fechaJuego.
+      const creditsStore = bindCreditsStore(tx);
+      await consumirCreditosTrasEmitirTicket(creditsStore, {
+        actorRol,
+        vendedorId,
+        ticketId: created.id,
+        ticketCreatedAt: created.createdAt,
+        totalApostado: created.totalApostado,
+        ahora,
       });
 
       return created;
