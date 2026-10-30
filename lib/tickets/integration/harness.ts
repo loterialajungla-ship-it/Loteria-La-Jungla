@@ -109,8 +109,12 @@ export async function resetTicketDomain(db: PrismaClient): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      // Orden FK: movimientos (→ Ticket/Usuario) → líneas → tickets → cuentas → usuarios.
+      // No toca CreditosConfig (singleton de control; fuera del dominio ticket).
+      await db.creditoMovimiento.deleteMany();
       await db.ticketLinea.deleteMany();
       await db.ticket.deleteMany();
+      await db.vendedorCreditoCuenta.deleteMany();
       await db.ticketCounter.deleteMany();
       await db.auditoria.deleteMany();
       await db.usuarioSesion.deleteMany();

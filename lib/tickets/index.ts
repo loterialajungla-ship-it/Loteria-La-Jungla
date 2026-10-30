@@ -1,6 +1,12 @@
 export {
   createTicket,
   assertEmisorPuedeCrearTicket,
+  assertEmisorRowPuedeCrearTicket,
+  lockAndAssertEmisorPuedeCrearTicket,
+} from "@/lib/tickets/create-ticket";
+export type {
+  EmisorTicketRow,
+  EmisorLockTx,
 } from "@/lib/tickets/create-ticket";
 export { getMultiplicadorPremio, CLAVE_MULTIPLICADOR_PREMIO } from "@/lib/tickets/ticket-config";
 export { generarCodigoPublico } from "@/lib/tickets/ticket-code";
