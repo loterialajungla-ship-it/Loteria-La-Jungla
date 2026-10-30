@@ -10,7 +10,9 @@ import { createMemoryCreditosStore } from "@/lib/creditos/store";
 import { fechaAYYYYMMDD, fechaHoyParaPrisma, hoyYYYYMMDD } from "@/lib/fecha";
 import {
   assertEmisorPuedeCrearTicket,
+  assertEmisorRowPuedeCrearTicket,
   createTicket,
+  lockAndAssertEmisorPuedeCrearTicket,
 } from "@/lib/tickets/create-ticket";
 import { TicketSellerNotAllowedError } from "@/lib/tickets/errors";
 import { buildIdempotencyRequestHash } from "@/lib/tickets/idempotency";
@@ -361,7 +363,14 @@ describe("H3 dominio: emisión ADMIN sin consumo de créditos", () => {
               }));
             },
           },
-          async $queryRaw() {
+          async $queryRaw(...args: unknown[]) {
+            const sql = args[0] as { strings?: readonly string[] } | undefined;
+            const text = Array.isArray(sql?.strings)
+              ? sql!.strings!.join(" ")
+              : String(sql ?? "");
+            if (text.includes('"Usuario"') && text.includes("FOR UPDATE")) {
+              return [{ id: adminId, rol: "ADMIN", activo: true }];
+            }
             return [{ ultimoNumero: 1 }];
           },
           ticket: {
@@ -450,6 +459,179 @@ describe("H3 dominio: emisión ADMIN sin consumo de créditos", () => {
       adminId,
     );
     assert.equal(cuenta?.saldoDisponible.toFixed(2), "80.00");
+    assert.equal(
+      movimientos.filter((m) => m.tipo === "CONSUMO_VENTA").length,
+      0,
+    );
+  });
+});
+
+describe("H3 autoridad FOR UPDATE del emisor (anti-TOCTOU)", () => {
+  it("assertEmisorRowPuedeCrearTicket rechaza inactivo / rol / null", () => {
+    assert.throws(
+      () =>
+        assertEmisorRowPuedeCrearTicket(null, {
+          vendedorId: "x",
+          actorRol: "VENDEDOR",
+        }),
+      TicketSellerNotAllowedError,
+    );
+    assert.throws(
+      () =>
+        assertEmisorRowPuedeCrearTicket(
+          { id: "v1", rol: "VENDEDOR", activo: false },
+          { vendedorId: "v1", actorRol: "VENDEDOR" },
+        ),
+      TicketSellerNotAllowedError,
+    );
+    assert.throws(
+      () =>
+        assertEmisorRowPuedeCrearTicket(
+          { id: "v1", rol: "ADMIN", activo: true },
+          { vendedorId: "v1", actorRol: "VENDEDOR" },
+        ),
+      TicketSellerNotAllowedError,
+    );
+  });
+
+  it("lockAndAssertEmisorPuedeCrearTicket emite FOR UPDATE y valida fila", async () => {
+    const calls: string[] = [];
+    const tx = {
+      async $queryRaw(...args: unknown[]) {
+        const sql = args[0] as { strings?: readonly string[] } | undefined;
+        const text = Array.isArray(sql?.strings)
+          ? sql!.strings!.join(" ")
+          : String(sql ?? "");
+        calls.push(text);
+        assert.match(text, /FOR UPDATE/);
+        assert.match(text, /"Usuario"/);
+        return [{ id: "v-lock", rol: "VENDEDOR", activo: true }];
+      },
+    };
+    const row = await lockAndAssertEmisorPuedeCrearTicket(
+      tx as Parameters<typeof lockAndAssertEmisorPuedeCrearTicket>[0],
+      {
+        vendedorId: "v-lock",
+        actorRol: "VENDEDOR",
+      },
+    );
+    assert.equal(row.id, "v-lock");
+    assert.equal(calls.length, 1);
+  });
+
+  it("createTicket: outer activo + inner FOR UPDATE inactivo → rechazo sin ticket ni consumo", async () => {
+    const ahora = new Date("2026-11-02T12:00:00.000Z");
+    const fechaStr = hoyYYYYMMDD(ahora);
+    const vendedorId = "v-race";
+    const idempotencyKey = "dddddddd-eeee-4fff-8000-111111111111";
+
+    const credits = createMemoryCreditosStore();
+    await actualizarCreditosConfig(credits, {
+      controlActivo: true,
+      inicioEn: new Date("2026-11-01T04:00:00.000Z"),
+      updatedByAdminId: "admin",
+    });
+    await asignarCreditos(credits, {
+      vendedorId,
+      importe: "50.00",
+      actorAdminId: "admin",
+    });
+    const saldoAntes = (await consultarSaldoYHistorial(credits, vendedorId))
+      .cuenta!.saldoDisponible.toFixed(2);
+
+    let ticketCreates = 0;
+    let creditsBindCalls = 0;
+    const db = {
+      usuario: {
+        async findUnique() {
+          return { id: vendedorId, rol: "VENDEDOR" as const, activo: true };
+        },
+      },
+      ticket: {
+        async findUnique() {
+          return null;
+        },
+      },
+      async $transaction(
+        fn: (tx: Record<string, unknown>) => Promise<unknown>,
+      ) {
+        const tx = {
+          async $queryRaw(...args: unknown[]) {
+            const sql = args[0] as { strings?: readonly string[] } | undefined;
+            const text = Array.isArray(sql?.strings)
+              ? sql!.strings!.join(" ")
+              : String(sql ?? "");
+            if (text.includes('"Usuario"') && text.includes("FOR UPDATE")) {
+              return [{ id: vendedorId, rol: "VENDEDOR", activo: false }];
+            }
+            return [{ ultimoNumero: 1 }];
+          },
+          configNegocio: {
+            async findUnique() {
+              return { clave: "MULTIPLICADOR_PREMIO", valorInt: 30 };
+            },
+          },
+          resultado: {
+            async findMany() {
+              return [];
+            },
+          },
+          animal: {
+            async findMany(args: { where: { numero: { in: string[] } } }) {
+              return args.where.numero.in.map((numero) => ({
+                numero,
+                nombre: `Animal-${numero}`,
+              }));
+            },
+          },
+          ticket: {
+            async findUnique() {
+              return null;
+            },
+            async create() {
+              ticketCreates += 1;
+              throw new Error("no debe crear ticket");
+            },
+          },
+          auditoria: {
+            async create() {
+              throw new Error("no debe auditar");
+            },
+          },
+        };
+        return fn(tx);
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        createTicket(
+          {
+            fechaJuego: fechaStr,
+            idempotencyKey,
+            vendedorId,
+            lineas: [{ hora: 19, numeroAnimal: "00", importe: "5.00" }],
+          },
+          ahora,
+          db as never,
+          {
+            actorRol: "VENDEDOR",
+            bindCreditsStore: () => {
+              creditsBindCalls += 1;
+              return credits;
+            },
+          },
+        ),
+      (e: unknown) => e instanceof TicketSellerNotAllowedError,
+    );
+
+    assert.equal(ticketCreates, 0);
+    assert.equal(creditsBindCalls, 0);
+    const { cuenta, movimientos } = await consultarSaldoYHistorial(
+      credits,
+      vendedorId,
+    );
+    assert.equal(cuenta?.saldoDisponible.toFixed(2), saldoAntes);
     assert.equal(
       movimientos.filter((m) => m.tipo === "CONSUMO_VENTA").length,
       0,

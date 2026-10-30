@@ -1,5 +1,4 @@
 import { Prisma, type PrismaClient, type RolUsuario } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { consumirCreditosTrasEmitirTicket } from "@/lib/creditos/aplicar-en-venta";
@@ -155,6 +154,16 @@ function esConflictoIdempotencyKey(error: unknown): boolean {
 
 type CreateTicketDb = Pick<PrismaClient, "ticket" | "usuario" | "$transaction">;
 
+/**
+ * Lazy: evita cargar el motor Prisma al importar este módulo en unit tests
+ * que siempre inyectan `db`. En runtime HTTP se resuelve el singleton guarded.
+ */
+function defaultCreateTicketDb(): CreateTicketDb {
+  // require evitado en carga estática; ok en servidor Node / Next.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("@/lib/prisma").prisma as CreateTicketDb;
+}
+
 export type CreateTicketOptions = {
   /**
    * Rol del actor autenticado (sesión). ADMIN no consume créditos.
@@ -166,6 +175,12 @@ export type CreateTicketOptions = {
    * Inyectable para unit tests. Por defecto: adaptador Prisma sobre la TX.
    */
   bindCreditsStore?: (tx: Prisma.TransactionClient) => CreditosStore;
+  /**
+   * Solo pruebas: se invoca dentro de la TX justo después del FOR UPDATE del
+   * emisor (antes de crear ticket / créditos). Permite barreras deterministas
+   * de concurrencia sin sleep arbitrario. No usar en rutas HTTP.
+   */
+  afterEmisorLocked?: () => Promise<void>;
 };
 
 /** Puerto mínimo para validar emisor (inyectable en unit tests). */
@@ -178,18 +193,23 @@ export type EmisorTicketLookup = {
   };
 };
 
+export type EmisorTicketRow = {
+  id: string;
+  rol: RolUsuario;
+  activo: boolean;
+};
+
+/** Cliente mínimo para bloqueo FOR UPDATE del emisor (TX interactiva). */
+export type EmisorLockTx = Pick<Prisma.TransactionClient, "$queryRaw">;
+
 /**
- * Defensa en profundidad: el emisor debe existir, estar activo y conservar
- * el rol de sesión (ADMIN o VENDEDOR). No confía en un rol enviado en el body.
+ * Autoridad de dominio sobre una fila ya leída (con o sin bloqueo).
+ * No confía en un rol enviado en el body HTTP.
  */
-export async function assertEmisorPuedeCrearTicket(
-  db: EmisorTicketLookup,
+export function assertEmisorRowPuedeCrearTicket(
+  user: EmisorTicketRow | null,
   args: { vendedorId: string; actorRol: RolUsuario },
-): Promise<void> {
-  const user = await db.usuario.findUnique({
-    where: { id: args.vendedorId },
-    select: { id: true, rol: true, activo: true },
-  });
+): EmisorTicketRow {
   if (!user) {
     throw new TicketSellerNotAllowedError("Usuario emisor no encontrado.");
   }
@@ -206,6 +226,49 @@ export async function assertEmisorPuedeCrearTicket(
       "Rol no autorizado para emitir tickets.",
     );
   }
+  return user;
+}
+
+/**
+ * Lectura sin bloqueo (optimización / tests). No es la autorización definitiva
+ * de una emisión nueva: esa ocurre en `lockAndAssertEmisorPuedeCrearTicket`.
+ */
+export async function assertEmisorPuedeCrearTicket(
+  db: EmisorTicketLookup,
+  args: { vendedorId: string; actorRol: RolUsuario },
+): Promise<void> {
+  const user = await db.usuario.findUnique({
+    where: { id: args.vendedorId },
+    select: { id: true, rol: true, activo: true },
+  });
+  assertEmisorRowPuedeCrearTicket(user, args);
+}
+
+/**
+ * Bloquea la fila `Usuario` (`SELECT … FOR UPDATE`) y revalida activo/rol.
+ * Debe ejecutarse dentro de la misma TX que crea el ticket (antes del create
+ * y antes de bloquear `VendedorCreditoCuenta` → orden Usuario → cuenta).
+ */
+export async function lockAndAssertEmisorPuedeCrearTicket(
+  tx: EmisorLockTx,
+  args: { vendedorId: string; actorRol: RolUsuario },
+): Promise<EmisorTicketRow> {
+  const id = args.vendedorId.trim();
+  if (!id) {
+    throw new TicketSellerNotAllowedError("Usuario emisor no encontrado.");
+  }
+
+  const rows = await tx.$queryRaw<EmisorTicketRow[]>`
+    SELECT id, rol, activo
+    FROM "Usuario"
+    WHERE id = ${id}
+    FOR UPDATE
+  `;
+
+  return assertEmisorRowPuedeCrearTicket(rows[0] ?? null, {
+    vendedorId: id,
+    actorRol: args.actorRol,
+  });
 }
 
 /**
@@ -223,7 +286,7 @@ export async function assertEmisorPuedeCrearTicket(
 export async function createTicket(
   input: CreateTicketInput,
   ahora = new Date(),
-  db: CreateTicketDb = prisma,
+  db: CreateTicketDb = defaultCreateTicketDb(),
   options: CreateTicketOptions = {},
 ): Promise<CreateTicketResult> {
   const actorRol: RolUsuario = options.actorRol ?? "VENDEDOR";
@@ -282,15 +345,19 @@ export async function createTicket(
     });
   }
 
-  // Nueva emisión: emisor debe existir, estar activo y conservar rol de sesión.
-  // Deuda técnica (TOCTOU): la comprobación ocurre antes de $transaction;
-  // existe una ventana teórica si el usuario se desactiva entre assert y create.
-  // No se refuerza el aislamiento aquí (FASE 7.47); la auth HTTP sigue exigiendo activo.
+  // Fast-fail fuera de TX (optimización). La autoridad es el FOR UPDATE dentro.
   await assertEmisorPuedeCrearTicket(db, { vendedorId, actorRol });
 
   try {
     const ticket = await db.$transaction(
       async (tx) => {
+      // Autoridad: bloquear Usuario y revalidar activo/rol en esta TX.
+      // Orden de bloqueos: Usuario → (más tarde) VendedorCreditoCuenta.
+      await lockAndAssertEmisorPuedeCrearTicket(tx, { vendedorId, actorRol });
+      if (options.afterEmisorLocked) {
+        await options.afterEmisorLocked();
+      }
+
       const multiplicadorUsado = await getMultiplicadorPremio(tx);
       if (!Number.isInteger(multiplicadorUsado) || multiplicadorUsado <= 0) {
         throw new ConfigurationError("Multiplicador inválido.");
