@@ -60,6 +60,12 @@ export function CreditosConfigForm({
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
+    if (!initial.configPersisted) {
+      setError(
+        "Configuración no inicializada. Usa el procedimiento operativo de bootstrap.",
+      );
+      return;
+    }
     if (!guardRef.current.tryAcquire()) return;
     setBusy(true);
     setError(null);
@@ -166,14 +172,39 @@ export function CreditosConfigForm({
           otros campos.
         </p>
 
-        {!initial.controlActivo ? (
+        {!initial.configPersisted ? (
           <div className="mt-3">
-            <Alert variant="warning" title="Control desactivado">
-              Las ventas no consumen créditos mientras el control esté apagado o
-              falte inicioEn.
+            <Alert variant="error" title="Configuración de créditos no inicializada.">
+              Las ventas de vendedores fallarán hasta inicializarla. Esto no
+              equivale a control desactivado. No uses este formulario para
+              bootstrap.
             </Alert>
           </div>
-        ) : null}
+        ) : !initial.controlActivo ? (
+          <div className="mt-3">
+            <Alert variant="warning" title="Control de créditos desactivado.">
+              Puedes preparar saldos sin consumirlos en ventas. El control
+              permanece apagado hasta una activación explícita con inicioEn.
+            </Alert>
+          </div>
+        ) : (
+          <div className="mt-3">
+            <Alert variant="info" title="Control de créditos activo.">
+              Las ventas de vendedor con Ticket.createdAt ≥ inicioEn consumen
+              saldo
+              {initial.inicioEn ? (
+                <>
+                  . Inicio:{" "}
+                  <strong className="text-ink">
+                    {formatearInstanteVe(initial.inicioEn)}
+                  </strong>{" "}
+                  (Caracas)
+                </>
+              ) : null}
+              .
+            </Alert>
+          </div>
+        )}
 
         {!initial.inicioEn ? (
           <div className="mt-3">

@@ -1,6 +1,8 @@
 /** Tipos de respuesta HTTP de la API de créditos (solo lo que expone el contrato). */
 
 export type CreditosConfigPublic = {
+  /** false = fila singleton ausente (defaults virtuales; no es “control apagado”). */
+  configPersisted: boolean;
   controlActivo: boolean;
   inicioEn: string | null;
   umbralSaldoBajo: string | null;

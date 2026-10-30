@@ -21,6 +21,7 @@
     "bootstrap:admin": "tsx scripts/bootstrap-admin.ts",
     "bootstrap:admin:production": "tsx scripts/bootstrap-admin-production.ts",
     "ensure:test-admin": "tsx scripts/ensure-test-admin.ts",
+    "credits:ensure-config": "tsx scripts/ensure-creditos-config.ts",
     "seed:manual-test": "tsx scripts/seed-manual-test.ts"
   },
   "prisma": {

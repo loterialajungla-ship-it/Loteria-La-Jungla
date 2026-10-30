@@ -53,6 +53,12 @@ export async function actualizarCreditosConfig(
 
   return store.runInTransaction(async (tx) => {
     const actual = await tx.getConfig();
+    if (!actual.configPersisted) {
+      throw new CreditoConfigError(
+        "La configuración de créditos no está inicializada. Ejecute el procedimiento operativo de bootstrap antes de modificarla.",
+        "CREDITOS_CONFIG_NO_INICIALIZADA",
+      );
+    }
     const nextInicio =
       args.inicioEn !== undefined ? args.inicioEn : actual.inicioEn;
     const nextActivo =

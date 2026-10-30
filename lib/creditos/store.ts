@@ -21,7 +21,10 @@ import {
   creditoZero,
   toCreditoDecimal,
 } from "@/lib/creditos/money";
-import { InsufficientCreditoSaldoError } from "@/lib/creditos/errors";
+import {
+  CreditoConfigError,
+  InsufficientCreditoSaldoError,
+} from "@/lib/creditos/errors";
 
 export type NuevoCreditoMovimiento = {
   id: string;
@@ -269,6 +272,12 @@ export function createMemoryCreditosStore(): CreditosStore {
     },
 
     async saveConfig(patch, ahora = new Date()) {
+      if (!config.configPersisted) {
+        throw new CreditoConfigError(
+          "La configuración de créditos no está inicializada. Ejecute el procedimiento operativo de bootstrap antes de modificarla.",
+          "CREDITOS_CONFIG_NO_INICIALIZADA",
+        );
+      }
       config = {
         controlActivo: patch.controlActivo ?? config.controlActivo,
         inicioEn:

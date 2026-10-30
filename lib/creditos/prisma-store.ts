@@ -14,6 +14,7 @@
  */
 import { Prisma, type PrismaClient, type TipoCreditoMovimiento } from "@prisma/client";
 import {
+  CreditoConfigError,
   CreditoValidationError,
   InsufficientCreditoSaldoError,
 } from "@/lib/creditos/errors";
@@ -264,33 +265,48 @@ export function createPrismaCreditosStore(
     },
 
     async saveConfig(patch, ahora = new Date()) {
+      // Solo UPDATE: nunca crea CreditosConfig (bootstrap = migración/comando).
       const actual = await store.getConfig();
-      const row = await client.creditosConfig.upsert({
-        where: { id: 1 },
-        create: {
-          id: 1,
-          controlActivo: patch.controlActivo ?? false,
-          inicioEn: patch.inicioEn !== undefined ? patch.inicioEn : null,
-          umbralSaldoBajo:
-            patch.umbralSaldoBajo !== undefined ? patch.umbralSaldoBajo : null,
-          updatedAt: ahora,
-          updatedByAdminId: patch.updatedByAdminId ?? null,
-        },
-        update: {
-          controlActivo: patch.controlActivo ?? actual.controlActivo,
-          inicioEn:
-            patch.inicioEn !== undefined ? patch.inicioEn : actual.inicioEn,
-          umbralSaldoBajo:
-            patch.umbralSaldoBajo !== undefined
-              ? patch.umbralSaldoBajo
-              : actual.umbralSaldoBajo,
-          updatedAt: ahora,
-          updatedByAdminId:
-            patch.updatedByAdminId !== undefined
-              ? patch.updatedByAdminId
-              : actual.updatedByAdminId,
-        },
-      });
+      if (!actual.configPersisted) {
+        throw new CreditoConfigError(
+          "La configuración de créditos no está inicializada. Ejecute el procedimiento operativo de bootstrap antes de modificarla.",
+          "CREDITOS_CONFIG_NO_INICIALIZADA",
+        );
+      }
+
+      let row;
+      try {
+        row = await client.creditosConfig.update({
+          where: { id: 1 },
+          data: {
+            controlActivo: patch.controlActivo ?? actual.controlActivo,
+            inicioEn:
+              patch.inicioEn !== undefined ? patch.inicioEn : actual.inicioEn,
+            umbralSaldoBajo:
+              patch.umbralSaldoBajo !== undefined
+                ? patch.umbralSaldoBajo
+                : actual.umbralSaldoBajo,
+            updatedAt: ahora,
+            updatedByAdminId:
+              patch.updatedByAdminId !== undefined
+                ? patch.updatedByAdminId
+                : actual.updatedByAdminId,
+          },
+        });
+      } catch (e) {
+        // Carrera: fila borrada entre getConfig y update — no crear.
+        if (
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === "P2025"
+        ) {
+          throw new CreditoConfigError(
+            "La configuración de créditos no está inicializada. Ejecute el procedimiento operativo de bootstrap antes de modificarla.",
+            "CREDITOS_CONFIG_NO_INICIALIZADA",
+          );
+        }
+        throw e;
+      }
+
       return {
         controlActivo: row.controlActivo,
         inicioEn: row.inicioEn,

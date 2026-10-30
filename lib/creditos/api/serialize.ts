@@ -24,6 +24,8 @@ export type CreditoMovimientoPublic = {
 };
 
 export type CreditosConfigPublic = {
+  /** false = fila singleton ausente (defaults virtuales; no es “control apagado”). */
+  configPersisted: boolean;
   controlActivo: boolean;
   inicioEn: string | null;
   umbralSaldoBajo: string | null;
@@ -57,6 +59,7 @@ export function serializeMovimiento(
 
 export function serializeConfig(c: CreditosConfigView): CreditosConfigPublic {
   return {
+    configPersisted: c.configPersisted,
     controlActivo: c.controlActivo,
     inicioEn: c.inicioEn ? c.inicioEn.toISOString() : null,
     umbralSaldoBajo: serializeDecimal(c.umbralSaldoBajo),

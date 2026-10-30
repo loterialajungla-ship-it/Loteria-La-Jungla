@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CreditosConfigForm } from "@/components/creditos/CreditosConfigForm";
 import {
@@ -29,6 +29,10 @@ import type {
 } from "@/lib/creditos/ui/api-types";
 import type { ApiErrorBody } from "@/lib/creditos/ui/api-types";
 import { formatearInstanteVe } from "@/lib/creditos/ui/caracas-instant";
+import {
+  CREDITOS_CONFIG_UI_COPY,
+  resolveCreditosConfigUiState,
+} from "@/lib/creditos/ui/config-ui-state";
 
 function sumSaldoPagina(items: CreditoResumenItem[]): string {
   // Suma en céntimos de la página actual (no es total histórico global).
@@ -52,7 +56,11 @@ export function CreditosAdminPanel() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** true si hay datos en pantalla pero el último refresh falló (pueden estar desactualizados). */
+  const [staleData, setStaleData] = useState(false);
   const [data, setData] = useState<CreditosResumenResponse | null>(null);
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,25 +78,29 @@ export function CreditosAdminPanel() {
       if (res.status === 401) {
         setError("Sesión expirada. Vuelve a iniciar sesión.");
         setData(null);
+        setStaleData(false);
         return;
       }
       if (res.status === 403) {
         setError("No tienes permiso de administrador.");
         setData(null);
+        setStaleData(false);
         return;
       }
       if (!res.ok || !("ok" in json) || json.ok !== true) {
-        setError(
+        const msg =
           (json as ApiErrorBody).error?.message ??
-            "No se pudo cargar el resumen de créditos.",
-        );
-        // Conserva datos previos (si los hay); 401/403 ya limpiaron arriba.
+          "No se pudo cargar el resumen de créditos.";
+        setError(msg);
+        // Conserva datos previos; si hay caché local, no es una consulta exitosa actual.
+        setStaleData(dataRef.current != null);
         return;
       }
       setData(json);
+      setStaleData(false);
     } catch {
       setError("Error de red al cargar créditos.");
-      // Conserva datos previos ante fallo de red ambiguo; no inventa estado.
+      setStaleData(dataRef.current != null);
     } finally {
       setLoading(false);
     }
@@ -138,9 +150,12 @@ export function CreditosAdminPanel() {
   }
 
   if (error && !data) {
+    const copy = CREDITOS_CONFIG_UI_COPY.error;
     return (
       <div className="mt-6">
-        <ErrorState title="No se pudo cargar">{error}</ErrorState>
+        <ErrorState title={copy.title}>
+          {error || copy.body}
+        </ErrorState>
         <Button
           type="button"
           variant="secondary"
@@ -155,6 +170,7 @@ export function CreditosAdminPanel() {
 
   if (!data) return null;
 
+  const configUi = resolveCreditosConfigUiState(data.config, false);
   const baseParams = {
     activo: activo || undefined,
     saldoBajo: saldoBajo || undefined,
@@ -162,10 +178,35 @@ export function CreditosAdminPanel() {
 
   return (
     <div className="mt-6 space-y-6">
-      {!data.config.controlActivo ? (
-        <Alert variant="warning" title="Control de créditos desactivado">
-          Las ventas no consumen saldo. Puedes preparar asignaciones y configurar
-          inicioEn antes de activar.
+      {configUi === "ausente" ? (
+        <Alert variant="error" title={CREDITOS_CONFIG_UI_COPY.ausente.title}>
+          {CREDITOS_CONFIG_UI_COPY.ausente.body}
+        </Alert>
+      ) : null}
+      {configUi === "persistida_apagada" ? (
+        <Alert
+          variant="warning"
+          title={CREDITOS_CONFIG_UI_COPY.persistida_apagada.title}
+        >
+          {CREDITOS_CONFIG_UI_COPY.persistida_apagada.body}
+        </Alert>
+      ) : null}
+      {configUi === "persistida_activa" ? (
+        <Alert
+          variant="info"
+          title={CREDITOS_CONFIG_UI_COPY.persistida_activa.title}
+        >
+          {CREDITOS_CONFIG_UI_COPY.persistida_activa.body}
+          {data.config.inicioEn ? (
+            <>
+              {" "}
+              Inicio:{" "}
+              <strong className="text-ink">
+                {formatearInstanteVe(data.config.inicioEn)}
+              </strong>{" "}
+              (Caracas).
+            </>
+          ) : null}
         </Alert>
       ) : null}
 
@@ -230,14 +271,21 @@ export function CreditosAdminPanel() {
         totales globales agregados en un solo campo.
       </p>
 
-      <CreditosConfigForm
-        initial={data.config}
-        onSaved={onConfigSaved}
-        onSessionExpired={() => {
-          setData(null);
-          setError("Sesión expirada o sin permiso.");
-        }}
-      />
+      {configUi === "ausente" ? (
+        <Alert variant="warning" title="Formulario de configuración bloqueado">
+          No hay acción de inicialización en esta pantalla. Usa el procedimiento
+          operativo documentado (`credits:ensure-config`) tras migrar.
+        </Alert>
+      ) : (
+        <CreditosConfigForm
+          initial={data.config}
+          onSaved={onConfigSaved}
+          onSessionExpired={() => {
+            setData(null);
+            setError("Sesión expirada o sin permiso.");
+          }}
+        />
+      )}
 
       <Card>
         <form method="get" className="flex flex-wrap items-end gap-3">
@@ -274,7 +322,14 @@ export function CreditosAdminPanel() {
       </Card>
 
       {error ? (
-        <Alert variant="error" title="Aviso">
+        <Alert
+          variant="error"
+          title={
+            staleData
+              ? "No se pudo actualizar. Los datos mostrados pueden estar desactualizados."
+              : "Aviso"
+          }
+        >
           {error}
         </Alert>
       ) : null}
