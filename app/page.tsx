@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { FranjasResultados } from "@/components/FranjasResultados";
 import { NavegacionFecha } from "@/components/NavegacionFecha";
@@ -96,15 +95,6 @@ export default async function PaginaResultados({ searchParams }: Props) {
             ahora={ahora}
           />
         </div>
-
-        <footer className="mt-10 border-t border-emerald-900 pt-6 text-center text-sm text-emerald-400">
-          <Link
-            href="/login"
-            className="font-semibold text-emerald-300 underline underline-offset-2 hover:text-amber-200 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-          >
-            Acceso personal
-          </Link>
-        </footer>
       </main>
     </div>
   );
