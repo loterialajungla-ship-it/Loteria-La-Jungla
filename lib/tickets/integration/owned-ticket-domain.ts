@@ -3,7 +3,11 @@
  *
  * Solo borra IDs registrados (o recuperados con prueba de pertenencia).
  * Nunca: deleteMany globales, CreditosConfig, Animal, ConfigNegocio, filas ajenas.
- * TicketCounter: solo si, tras borrar tickets propios, quedan 0 tickets en esa fecha.
+ *
+ * TicketCounter: el modelo solo tiene PK `fechaJuego` (sin owner/runId). No se
+ * puede demostrar ownership exclusivo. Cleanup **nunca** borra TicketCounter
+ * (ni por fecha ni por “0 tickets”). Las filas residuales en TEST son inocuas:
+ * `createTicket` hace UPSERT +1 y las suites leen `ultimoNumero` como base.
  */
 import type { PrismaClient } from "@prisma/client";
 import {
@@ -16,7 +20,10 @@ export type OwnedTicketDomain = {
   userIds: Set<string>;
   ticketIds: Set<string>;
   resultadoIds: Set<string>;
-  /** Fechas ISO de TicketCounter candidatas a borrado condicional. */
+  /**
+   * Fechas fixture observadas (telemetría / compat). No se usan para borrar
+   * TicketCounter — ver comentario de cabecera.
+   */
   ticketCounterFechas: Set<string>;
 };
 
@@ -69,9 +76,43 @@ export function trackOwnedResultadoId(
   domain.resultadoIds.add(resultadoId);
 }
 
-/** Marca la fecha fixture de ventas como candidata a reset de contador. */
+/**
+ * Registra la fecha fixture de ventas (compat con suites existentes).
+ * No autoriza borrado de TicketCounter.
+ */
 export function trackFixtureTicketCounter(domain: OwnedTicketDomain): void {
   domain.ticketCounterFechas.add(fechaJuegoDate().toISOString());
+}
+
+/**
+ * Si la suite necesita una fecha “exclusiva” (p. ej. numeración absoluta desde 0
+ * o ausencia total de tickets ajenos), aborta al detectar tickets no owned.
+ * Un TicketCounter residual solo NO es motivo de abort (opción A).
+ */
+export async function assertExclusiveTicketFechaOrAbort(
+  db: PrismaClient,
+  domain: OwnedTicketDomain,
+  fecha: Date,
+): Promise<void> {
+  assertIntegrationPrismaClient(db);
+  const rows = await db.ticket.findMany({
+    where: { fechaJuego: fecha },
+    select: { id: true, vendedorId: true, numeroVisible: true },
+  });
+  const foreign = rows.filter((t) => !domain.ticketIds.has(t.id));
+  if (foreign.length === 0) return;
+  const detail = foreign
+    .slice(0, 5)
+    .map(
+      (t) =>
+        `id=${t.id} num=${t.numeroVisible} vend=${t.vendedorId ?? "null"}`,
+    )
+    .join("; ");
+  throw new Error(
+    `[owned-ticket-domain] ABORT: fecha fixture no exclusiva ` +
+      `(tickets ajenos=${foreign.length}). No se borran tickets ni TicketCounter. ` +
+      `${detail}`,
+  );
 }
 
 export async function createOwnedTestUser(
@@ -320,16 +361,9 @@ export async function cleanupOwnedTicketDomain(
     deletedUsers = r.count;
   }
 
-  for (const iso of domain.ticketCounterFechas) {
-    const fecha = new Date(iso);
-    const remaining = await db.ticket.count({ where: { fechaJuego: fecha } });
-    if (remaining === 0) {
-      const r = await db.ticketCounter.deleteMany({
-        where: { fechaJuego: fecha },
-      });
-      deletedTicketCounters += r.count;
-    }
-  }
+  // TicketCounter: nunca borrar. Sin columna de ownership no hay prueba de
+  // pertenencia; "0 tickets en fecha" no implica que el contador sea propio.
+  deletedTicketCounters = 0;
 
   clearOwnedTicketDomain(domain);
 
