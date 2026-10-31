@@ -9,7 +9,7 @@
  * - Tras desactivación previa, venta rechaza sin ticket.
  */
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { createTicket } from "@/lib/tickets/create-ticket";
 import { TicketSellerNotAllowedError } from "@/lib/tickets/errors";
 import { InsufficientCreditoSaldoError } from "@/lib/creditos/errors";
@@ -22,11 +22,25 @@ import { desactivarUsuario } from "@/lib/users/admin-users";
 import {
   AHORA_VE_MANANA,
   createIntegrationPrismaClient,
-  createTestUser,
   newIdempotencyKey,
-  resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import {
+  cleanupOwnedTicketDomain,
+  createOwnedTestUser,
+  createOwnedTicketDomain,
+  trackFixtureTicketCounter,
+  type OwnedTicketDomain,
+} from "@/lib/tickets/integration/owned-ticket-domain";
+import {
+  acknowledgeCreditosConfigLeaseHeld,
+  beginTemporaryCreditosControlOff,
+  readCreditosConfigSnapshot,
+  restoreCreditosConfigBaseline,
+  restoreCreditosConfigLease,
+  type CreditosConfigLease,
+  type CreditosConfigSnapshot,
+} from "@/lib/tickets/integration/creditos-config-test-fixture";
 import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 import { hoyYYYYMMDD } from "@/lib/fecha";
 import { NEON_ENDPOINTS } from "@/lib/db/neon-endpoint-guard";
@@ -49,7 +63,13 @@ describe(
   () => {
     let db: ReturnType<typeof createIntegrationPrismaClient>;
     let db2: ReturnType<typeof createIntegrationPrismaClient>;
+    let domain: OwnedTicketDomain;
+    let runTag: string;
     let admin: { id: string };
+    /** Estado real de CreditosConfig al entrar a la suite (no asumir OFF). */
+    let suiteCreditosSnap: CreditosConfigSnapshot = { existed: false };
+    /** Lease del override temporal OFF por test. */
+    let testCreditosLease: CreditosConfigLease | null = null;
 
     before(async () => {
       assertIntegrationPointsAtTestDatabase();
@@ -65,38 +85,43 @@ describe(
       );
       db = createIntegrationPrismaClient();
       db2 = createIntegrationPrismaClient();
+      runTag = `lk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
       await seedMinimalBusiness(db);
+      suiteCreditosSnap = await readCreditosConfigSnapshot(db);
     });
 
     beforeEach(async () => {
       assertIntegrationPointsAtTestDatabase();
-      await resetTicketDomain(db);
+      if (domain) {
+        await cleanupOwnedTicketDomain(db, domain);
+      }
+      domain = createOwnedTicketDomain();
+      trackFixtureTicketCounter(domain);
       await seedMinimalBusiness(db);
-      // CreditosConfig singleton: control OFF por defecto (fail-closed explícito).
-      await db.$executeRaw`
-        INSERT INTO "CreditosConfig"
-          ("id", "controlActivo", "inicioEn", "umbralSaldoBajo", "updatedAt", "updatedByAdminId")
-        VALUES (1, false, NULL, NULL, NOW(), NULL)
-        ON CONFLICT ("id") DO UPDATE SET
-          "controlActivo" = false,
-          "inicioEn" = NULL,
-          "updatedAt" = NOW()
-      `;
-      admin = await createTestUser(db, {
-        usuario: "admin_lock",
+      // Override temporal OFF; restore seguro vía lease (no pisa cambios ajenos).
+      testCreditosLease = await beginTemporaryCreditosControlOff(db);
+      admin = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_adm`.slice(0, 40),
         nombre: "Admin Lock",
         rol: "ADMIN",
       });
     });
 
+    afterEach(async () => {
+      if (testCreditosLease) {
+        await restoreCreditosConfigLease(db, testCreditosLease);
+        testCreditosLease = null;
+      }
+    });
+
     after(async () => {
-      // Dejar TEST con control desactivado (estado seguro post-suite).
       try {
-        await db.$executeRaw`
-          UPDATE "CreditosConfig"
-          SET "controlActivo" = false, "inicioEn" = NULL, "updatedAt" = NOW()
-          WHERE "id" = 1
-        `;
+        if (domain) await cleanupOwnedTicketDomain(db, domain);
+      } catch {
+        /* ignore cleanup errors on teardown */
+      }
+      try {
+        await restoreCreditosConfigBaseline(db, suiteCreditosSnap);
       } catch {
         /* ignore */
       }
@@ -105,8 +130,8 @@ describe(
     });
 
     it("usuario activo autorizado: creación permitida", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_ok",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_ok`.slice(0, 40),
         nombre: "Vend OK",
         rol: "VENDEDOR",
       });
@@ -128,8 +153,8 @@ describe(
     });
 
     it("usuario inactivo antes de TX: rechazo sin ticket", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_off",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_off`.slice(0, 40),
         nombre: "Vend Off",
         rol: "VENDEDOR",
       });
@@ -157,8 +182,8 @@ describe(
     });
 
     it("rol incompatible tras lectura bloqueada: rechazo", async () => {
-      const user = await createTestUser(db, {
-        usuario: "vend_rol",
+      const user = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_rol`.slice(0, 40),
         nombre: "Vend Rol",
         rol: "VENDEDOR",
       });
@@ -219,8 +244,8 @@ describe(
     });
 
     it("VENDEDOR: sin consumo cuando control está desactivado", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_nocred",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_nc`.slice(0, 40),
         nombre: "Vend NoCred",
         rol: "VENDEDOR",
       });
@@ -247,8 +272,8 @@ describe(
     });
 
     it("VENDEDOR: consumo correcto cuando control activo y fecha aplica", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_cred",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_cr`.slice(0, 40),
         nombre: "Vend Cred",
         rol: "VENDEDOR",
       });
@@ -259,6 +284,9 @@ describe(
           inicioEn: new Date("2020-01-01T00:00:00.000Z"),
         },
       });
+      if (testCreditosLease) {
+        await acknowledgeCreditosConfigLeaseHeld(db, testCreditosLease);
+      }
       const credits = createPrismaCreditosStore(db);
       await asignarCreditos(credits, {
         vendedorId: vendedor.id,
@@ -288,8 +316,8 @@ describe(
     });
 
     it("fallo de consumo (saldo insuficiente): rollback sin ticket ni movimiento", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_insuf",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_in`.slice(0, 40),
         nombre: "Vend Insuf",
         rol: "VENDEDOR",
       });
@@ -300,6 +328,9 @@ describe(
           inicioEn: new Date("2020-01-01T00:00:00.000Z"),
         },
       });
+      if (testCreditosLease) {
+        await acknowledgeCreditosConfigLeaseHeld(db, testCreditosLease);
+      }
       const credits = createPrismaCreditosStore(db);
       await asignarCreditos(credits, {
         vendedorId: vendedor.id,
@@ -342,8 +373,8 @@ describe(
     });
 
     it("desactivación previa al FOR UPDATE: venta rechazada sin residuos", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_pre",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_pre`.slice(0, 40),
         nombre: "Vend Pre",
         rol: "VENDEDOR",
       });
@@ -373,8 +404,8 @@ describe(
     });
 
     it("concurrencia A: venta bloquea Usuario; desactivación espera; venta OK luego off", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_hold",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_hold`.slice(0, 40),
         nombre: "Vend Hold",
         rol: "VENDEDOR",
       });
@@ -446,8 +477,8 @@ describe(
     });
 
     it("concurrencia B: desactivación confirma primero; venta posterior rechaza", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_first",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_1st`.slice(0, 40),
         nombre: "Vend First",
         rol: "VENDEDOR",
       });
@@ -476,8 +507,8 @@ describe(
     });
 
     it("cambio de rol no autorizado: venta rechaza sin residuos", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_roleflip",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_flip`.slice(0, 40),
         nombre: "Vend RoleFlip",
         rol: "VENDEDOR",
       });
@@ -510,8 +541,8 @@ describe(
     });
 
     it("idempotencia: misma key no duplica tras éxito", async () => {
-      const vendedor = await createTestUser(db, {
-        usuario: "vend_idem",
+      const vendedor = await createOwnedTestUser(db, domain, {
+        usuario: `${runTag}_idem`.slice(0, 40),
         nombre: "Vend Idem",
         rol: "VENDEDOR",
       });

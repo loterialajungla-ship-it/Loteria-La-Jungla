@@ -1,7 +1,7 @@
 /**
  * Integration: cambio / reset de contraseña + invalidación de sesiones.
  * Solo vía `npm run test:integration` (`RUN_INTEGRATION=1`).
- * Cliente: `createIntegrationPrismaClient` tras assert de destino TEST.
+ * Aislamiento FASE 7.74: owned-ticket-domain (sin wipe global).
  */
 
 import assert from "node:assert/strict";
@@ -19,9 +19,14 @@ import {
 } from "@/lib/auth/errors";
 import {
   createIntegrationPrismaClient,
-  resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import {
+  cleanupOwnedTicketDomain,
+  createOwnedTicketDomain,
+  trackOwnedUserId,
+  type OwnedTicketDomain,
+} from "@/lib/tickets/integration/owned-ticket-domain";
 import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 
 const ENABLED = process.env.RUN_INTEGRATION === "1";
@@ -31,52 +36,69 @@ const VENDOR_PASS = "vendor-pass-12";
 
 describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
   let db: ReturnType<typeof createIntegrationPrismaClient>;
+  let domain: OwnedTicketDomain;
+  let runTag: string;
+  let adminLogin: string;
+  let vendorLogin: string;
   let adminId: string;
   let vendorId: string;
 
   before(async () => {
     assertIntegrationPointsAtTestDatabase();
     db = createIntegrationPrismaClient();
+    runTag = `pw_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     await seedMinimalBusiness(db);
   });
 
   beforeEach(async () => {
     assertIntegrationPointsAtTestDatabase();
-    await resetTicketDomain(db);
+    if (domain) {
+      await cleanupOwnedTicketDomain(db, domain);
+    }
+    domain = createOwnedTicketDomain();
     await seedMinimalBusiness(db);
+
+    adminLogin = `${runTag}_adm`.slice(0, 40);
+    vendorLogin = `${runTag}_vend`.slice(0, 40);
 
     const adminHash = await hashPassword(ADMIN_PASS);
     const admin = await db.usuario.create({
       data: {
         nombre: "Admin PW",
-        usuario: "admin_pw",
+        usuario: adminLogin,
         passwordHash: adminHash,
         rol: "ADMIN",
         activo: true,
       },
     });
     adminId = admin.id;
+    trackOwnedUserId(domain, adminId);
 
     const vendHash = await hashPassword(VENDOR_PASS);
     const vendor = await db.usuario.create({
       data: {
         nombre: "Vendor PW",
-        usuario: "vend_pw",
+        usuario: vendorLogin,
         passwordHash: vendHash,
         rol: "VENDEDOR",
         activo: true,
       },
     });
     vendorId = vendor.id;
+    trackOwnedUserId(domain, vendorId);
   });
 
   after(async () => {
-    await db.$disconnect();
+    try {
+      if (domain) await cleanupOwnedTicketDomain(db, domain);
+    } finally {
+      await db.$disconnect();
+    }
   });
 
   it("cambio propio: hash nuevo, antigua falla, sesiones invalidadas", async () => {
     const login = await loginWithCredentials(db, {
-      usuario: "vend_pw",
+      usuario: vendorLogin,
       password: VENDOR_PASS,
     });
     assert.ok(login);
@@ -101,13 +123,13 @@ describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
 
     assert.equal(
       await loginWithCredentials(db, {
-        usuario: "vend_pw",
+        usuario: vendorLogin,
         password: VENDOR_PASS,
       }),
       null,
     );
     const again = await loginWithCredentials(db, {
-      usuario: "vend_pw",
+      usuario: vendorLogin,
       password: "vendor-new-99",
     });
     assert.ok(again);
@@ -165,7 +187,7 @@ describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
 
   it("ADMIN reset VENDEDOR: actualiza hash, invalida sesiones, no reactiva", async () => {
     const login = await loginWithCredentials(db, {
-      usuario: "vend_pw",
+      usuario: vendorLogin,
       password: VENDOR_PASS,
     });
     assert.ok(login);
@@ -205,12 +227,13 @@ describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
     const otherAdmin = await db.usuario.create({
       data: {
         nombre: "Other Admin",
-        usuario: "admin_pw2",
+        usuario: `${runTag}_adm2`.slice(0, 40),
         passwordHash: await hashPassword("other-admin1"),
         rol: "ADMIN",
         activo: true,
       },
     });
+    trackOwnedUserId(domain, otherAdmin.id);
 
     await assert.rejects(
       () =>

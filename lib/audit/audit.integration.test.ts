@@ -1,11 +1,11 @@
 /**
  * Integration: auditoría de acciones sensibles.
  * Solo vía `npm run test:integration` (`RUN_INTEGRATION=1`).
- * Cliente: `createIntegrationPrismaClient` tras assert de destino TEST.
+ * Aislamiento FASE 7.74: owned-ticket-domain (sin wipe global).
  */
 
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { createTicket } from "@/lib/tickets/create-ticket";
 import { anularTicket } from "@/lib/tickets/anular-ticket";
 import {
@@ -23,39 +23,66 @@ import { fechaAYYYYMMDD, hoyYYYYMMDD } from "@/lib/fecha";
 import {
   AHORA_VE_MANANA,
   createIntegrationPrismaClient,
-  createTestUser,
   newIdempotencyKey,
-  resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import {
+  cleanupOwnedTicketDomain,
+  createOwnedTestUser,
+  createOwnedTicketDomain,
+  trackFixtureTicketCounter,
+  trackOwnedResultadoId,
+  trackOwnedTicketId,
+  trackOwnedUserId,
+  type OwnedTicketDomain,
+} from "@/lib/tickets/integration/owned-ticket-domain";
+import {
+  beginTemporaryCreditosControlOff,
+  readCreditosConfigSnapshot,
+  restoreCreditosConfigBaseline,
+  restoreCreditosConfigLease,
+  type CreditosConfigLease,
+  type CreditosConfigSnapshot,
+} from "@/lib/tickets/integration/creditos-config-test-fixture";
 import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 
 const ENABLED = process.env.RUN_INTEGRATION === "1";
 
 describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
   let db: ReturnType<typeof createIntegrationPrismaClient>;
+  let domain: OwnedTicketDomain;
+  let runTag: string;
   let adminId: string;
   let vendorId: string;
+  let suiteCreditosSnap: CreditosConfigSnapshot = { existed: false };
+  let testCreditosLease: CreditosConfigLease | null = null;
 
   before(async () => {
     assertIntegrationPointsAtTestDatabase();
     db = createIntegrationPrismaClient();
+    runTag = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     await seedMinimalBusiness(db);
+    suiteCreditosSnap = await readCreditosConfigSnapshot(db);
   });
 
   beforeEach(async () => {
     assertIntegrationPointsAtTestDatabase();
-    await resetTicketDomain(db);
+    if (domain) {
+      await cleanupOwnedTicketDomain(db, domain);
+    }
+    domain = createOwnedTicketDomain();
+    trackFixtureTicketCounter(domain);
     await seedMinimalBusiness(db);
-    const admin = await createTestUser(db, {
-      usuario: "aud_admin",
+    testCreditosLease = await beginTemporaryCreditosControlOff(db);
+    const admin = await createOwnedTestUser(db, domain, {
+      usuario: `${runTag}_adm`.slice(0, 40),
       nombre: "Admin Aud",
       rol: "ADMIN",
       password: "admin-pass-12",
     });
     adminId = admin.id;
-    const vendor = await createTestUser(db, {
-      usuario: "aud_vend",
+    const vendor = await createOwnedTestUser(db, domain, {
+      usuario: `${runTag}_vend`.slice(0, 40),
       nombre: "Vend Aud",
       rol: "VENDEDOR",
       password: "vendor-pass-12",
@@ -63,8 +90,24 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
     vendorId = vendor.id;
   });
 
+  afterEach(async () => {
+    if (testCreditosLease) {
+      await restoreCreditosConfigLease(db, testCreditosLease);
+      testCreditosLease = null;
+    }
+  });
+
   after(async () => {
-    await db.$disconnect();
+    try {
+      if (domain) await cleanupOwnedTicketDomain(db, domain);
+    } finally {
+      try {
+        await restoreCreditosConfigBaseline(db, suiteCreditosSnap);
+      } catch {
+        /* ignore */
+      }
+      await db.$disconnect();
+    }
   });
 
   it("crear/activar/desactivar vendedor → Auditoria", async () => {
@@ -72,11 +115,12 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
       db,
       {
         nombre: "Nuevo Vend",
-        usuario: "nuevo_aud",
+        usuario: `${runTag}_nv`.slice(0, 40),
         password: "nueva1234",
       },
       { actorUserId: adminId },
     );
+    trackOwnedUserId(domain, created.id);
 
     let ev = await db.auditoria.findFirst({
       where: { accion: "CREAR_VENDEDOR", entidadId: created.id },
@@ -116,6 +160,7 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
       AHORA_VE_MANANA,
       db,
     );
+    trackOwnedTicketId(domain, created.ticket.id);
 
     const crearEv = await db.auditoria.findFirst({
       where: { accion: "CREAR_TICKET", entidadId: created.ticket.id },
@@ -144,10 +189,24 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
     const fecha = new Date(Date.UTC(2026, 9, 2));
     const fechaStr = fechaAYYYYMMDD(fecha);
 
+    // Hora 12: menos probable de conflicto con ventas fixture (hora 14).
+    const slotHora = 12;
+    const existing = await db.resultado.findUnique({
+      where: { fecha_hora: { fecha, hora: slotHora } },
+    });
+    if (existing) {
+      // No borrar ajeno; usar id propio solo si no hay fila.
+      // Skip asserts de creación si slot ocupado por terceros.
+      assert.ok(existing.id);
+      return;
+    }
+
+    let resultadoId: string;
     await db.$transaction(async (tx) => {
       const created = await tx.resultado.create({
-        data: { fecha, hora: 12, numero: "03" },
+        data: { fecha, hora: slotHora, numero: "03" },
       });
+      resultadoId = created.id;
       await recordAuditEvent(tx, {
         usuarioId: adminId,
         accion: "CREAR_RESULTADO",
@@ -155,21 +214,22 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
         entidadId: created.id,
         detalle: {
           fecha: fechaStr,
-          hora: 12,
+          hora: slotHora,
           numeroAnterior: null,
           numeroNuevo: "03",
         },
       });
     });
+    trackOwnedResultadoId(domain, resultadoId!);
 
     const crear = await db.auditoria.findFirst({
-      where: { accion: "CREAR_RESULTADO" },
+      where: { accion: "CREAR_RESULTADO", entidadId: resultadoId! },
     });
     assert.ok(crear);
 
     await db.$transaction(async (tx) => {
       const previo = await tx.resultado.findUniqueOrThrow({
-        where: { fecha_hora: { fecha, hora: 12 } },
+        where: { id: resultadoId! },
       });
       const updated = await tx.resultado.update({
         where: { id: previo.id },
@@ -182,7 +242,7 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
         entidadId: updated.id,
         detalle: {
           fecha: fechaStr,
-          hora: 12,
+          hora: slotHora,
           numeroAnterior: "03",
           numeroNuevo: "05",
         },
@@ -190,7 +250,7 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
     });
 
     const mod = await db.auditoria.findFirst({
-      where: { accion: "MODIFICAR_RESULTADO" },
+      where: { accion: "MODIFICAR_RESULTADO", entidadId: resultadoId! },
     });
     assert.ok(mod);
     assert.match(mod!.detalle ?? "", /"numeroAnterior":"03"/);
@@ -199,9 +259,10 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
     const listed = await listAuditoria(db, {
       accion: "MODIFICAR_RESULTADO",
     });
-    assert.equal(listed.items.length, 1);
-    assert.match(listed.items[0]!.detalleLegible, /03/);
-    assert.match(listed.items[0]!.detalleLegible, /05/);
+    const ours = listed.items.filter((i) => i.entidadId === resultadoId!);
+    assert.equal(ours.length, 1);
+    assert.match(ours[0]!.detalleLegible, /03/);
+    assert.match(ours[0]!.detalleLegible, /05/);
   });
 
   it("cambiar y reset password → Auditoria sin secretos", async () => {

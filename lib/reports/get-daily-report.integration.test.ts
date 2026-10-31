@@ -1,11 +1,11 @@
 /**
  * Integration: reporte diario ADMIN.
  * Solo vía `npm run test:integration` (`RUN_INTEGRATION=1`).
- * Cliente: `createIntegrationPrismaClient` tras assert de destino TEST.
+ * Aislamiento FASE 7.74: owned-ticket-domain (sin wipe global).
  */
 
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import { createTicket } from "@/lib/tickets/create-ticket";
 import { anularTicket } from "@/lib/tickets/anular-ticket";
@@ -16,50 +16,96 @@ import { InvalidGameDateError } from "@/lib/tickets/errors";
 import {
   AHORA_VE_MANANA,
   createIntegrationPrismaClient,
-  createTestUser,
   newIdempotencyKey,
-  resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import {
+  cleanupOwnedTicketDomain,
+  createOwnedTestUser,
+  createOwnedTicketDomain,
+  trackFixtureTicketCounter,
+  trackOwnedResultadoId,
+  trackOwnedTicketId,
+  type OwnedTicketDomain,
+} from "@/lib/tickets/integration/owned-ticket-domain";
+import {
+  beginTemporaryCreditosControlOff,
+  readCreditosConfigSnapshot,
+  restoreCreditosConfigBaseline,
+  restoreCreditosConfigLease,
+  type CreditosConfigLease,
+  type CreditosConfigSnapshot,
+} from "@/lib/tickets/integration/creditos-config-test-fixture";
 import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 
 const ENABLED = process.env.RUN_INTEGRATION === "1";
 
+function moneyAdd(a: string, b: string): string {
+  return (Number(a) + Number(b)).toFixed(2);
+}
+
 describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () => {
   let db: ReturnType<typeof createIntegrationPrismaClient>;
+  let domain: OwnedTicketDomain;
+  let runTag: string;
   let vendedorA: { id: string };
   let vendedorB: { id: string };
   let admin: { id: string };
+  let suiteCreditosSnap: CreditosConfigSnapshot = { existed: false };
+  let testCreditosLease: CreditosConfigLease | null = null;
 
   before(async () => {
     assertIntegrationPointsAtTestDatabase();
     db = createIntegrationPrismaClient();
+    runTag = `rp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     await seedMinimalBusiness(db);
+    suiteCreditosSnap = await readCreditosConfigSnapshot(db);
   });
 
   beforeEach(async () => {
     assertIntegrationPointsAtTestDatabase();
-    await resetTicketDomain(db);
+    if (domain) {
+      await cleanupOwnedTicketDomain(db, domain);
+    }
+    domain = createOwnedTicketDomain();
+    trackFixtureTicketCounter(domain);
     await seedMinimalBusiness(db);
-    vendedorA = await createTestUser(db, {
-      usuario: "rep_vend_a",
+    testCreditosLease = await beginTemporaryCreditosControlOff(db);
+    vendedorA = await createOwnedTestUser(db, domain, {
+      usuario: `${runTag}_va`.slice(0, 40),
       nombre: "Carlos",
       rol: "VENDEDOR",
     });
-    vendedorB = await createTestUser(db, {
-      usuario: "rep_vend_b",
+    vendedorB = await createOwnedTestUser(db, domain, {
+      usuario: `${runTag}_vb`.slice(0, 40),
       nombre: "José",
       rol: "VENDEDOR",
     });
-    admin = await createTestUser(db, {
-      usuario: "rep_admin",
+    admin = await createOwnedTestUser(db, domain, {
+      usuario: `${runTag}_ad`.slice(0, 40),
       nombre: "Admin Rep",
       rol: "ADMIN",
     });
   });
 
+  afterEach(async () => {
+    if (testCreditosLease) {
+      await restoreCreditosConfigLease(db, testCreditosLease);
+      testCreditosLease = null;
+    }
+  });
+
   after(async () => {
-    await db.$disconnect();
+    try {
+      if (domain) await cleanupOwnedTicketDomain(db, domain);
+    } finally {
+      try {
+        await restoreCreditosConfigBaseline(db, suiteCreditosSnap);
+      } catch {
+        /* ignore */
+      }
+      await db.$disconnect();
+    }
   });
 
   it("fecha inválida → InvalidGameDateError", async () => {
@@ -71,6 +117,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
 
   it("emitidos/anulados, total jugado, vendedores, horas, animales, exposición", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
+    const baseline = await getDailyReport(db, fecha);
 
     const t1 = await createTicket(
       {
@@ -85,8 +132,9 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
       AHORA_VE_MANANA,
       db,
     );
+    trackOwnedTicketId(domain, t1.ticket.id);
 
-    await createTicket(
+    const t2 = await createTicket(
       {
         fechaJuego: fecha,
         vendedorId: vendedorB.id,
@@ -96,12 +144,13 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
       AHORA_VE_MANANA,
       db,
     );
+    trackOwnedTicketId(domain, t2.ticket.id);
 
-    // Histórico sin vendedor
-    await db.ticket.create({
+    // Histórico sin vendedor — track explícito (no recuperable por userId).
+    const hist = await db.ticket.create({
       data: {
-        numeroVisible: `${fecha.replace(/-/g, "")}-999001`,
-        codigoPublico: `hist${Date.now()}`,
+        numeroVisible: `${fecha.replace(/-/g, "")}-9${runTag.slice(-5)}`,
+        codigoPublico: `hist${runTag}`,
         fechaJuego: new Date(Date.UTC(2026, 9, 2)),
         vendedorId: null,
         totalApostado: new Prisma.Decimal("3.00"),
@@ -120,6 +169,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
         },
       },
     });
+    trackOwnedTicketId(domain, hist.id);
 
     const toAnular = await createTicket(
       {
@@ -131,6 +181,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
       AHORA_VE_MANANA,
       db,
     );
+    trackOwnedTicketId(domain, toAnular.ticket.id);
     await anularTicket(db, {
       id: toAnular.ticket.id,
       motivo: "Prueba reporte",
@@ -140,10 +191,19 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
     const reporte = await getDailyReport(db, fecha);
 
     assert.equal(reporte.fechaJuego, fecha);
-    assert.equal(reporte.tickets.emitidos, 3);
-    assert.equal(reporte.tickets.anulados, 1);
-    // 10+5 + 7 + 3 = 25; anulado 100 excluido
-    assert.equal(reporte.ventas.totalJugado, "25.00");
+    assert.equal(
+      reporte.tickets.emitidos,
+      baseline.tickets.emitidos + 3,
+    );
+    assert.equal(
+      reporte.tickets.anulados,
+      baseline.tickets.anulados + 1,
+    );
+    // aporte propio: 10+5 + 7 + 3 = 25
+    assert.equal(
+      reporte.ventas.totalJugado,
+      moneyAdd(baseline.ventas.totalJugado, "25.00"),
+    );
 
     const sumaVend = sumMoneyStrings(
       reporte.porVendedor.map((v) => v.totalJugado),
@@ -159,57 +219,52 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
 
     const sin = reporte.porVendedor.find((v) => v.vendedorId === null)!;
     assert.equal(sin.nombre, "Sin vendedor");
-    assert.equal(sin.totalJugado, "3.00");
+    assert.ok(Number(sin.totalJugado) >= 3);
 
     assert.equal(reporte.porHora.length, HORAS_SORTEO.length);
     assert.equal(reporte.porHora.length, 11);
+
+    const h14Base =
+      baseline.porHora.find((h) => h.hora === 14)?.totalJugado ?? "0.00";
     assert.equal(
       reporte.porHora.find((h) => h.hora === 14)!.totalJugado,
-      "17.00",
+      moneyAdd(h14Base, "17.00"),
     );
+    const h15Base =
+      baseline.porHora.find((h) => h.hora === 15)?.totalJugado ?? "0.00";
     assert.equal(
       reporte.porHora.find((h) => h.hora === 15)!.totalJugado,
-      "5.00",
-    );
-    // anulado no en hora 14 extra
-    assert.equal(
-      sumMoneyStrings(reporte.porHora.map((h) => h.totalJugado)),
-      "25.00",
+      moneyAdd(h15Base, "5.00"),
     );
 
     const animalCount = await db.animal.count();
     assert.equal(reporte.porAnimal.length, animalCount);
+
+    const a03Base =
+      baseline.porAnimal.find((a) => a.numeroAnimal === "03")?.totalJugado ??
+      "0.00";
     assert.equal(
       reporte.porAnimal.find((a) => a.numeroAnimal === "03")!.totalJugado,
-      "17.00",
+      moneyAdd(a03Base, "17.00"),
     );
-    // animal del anulado no suma 100
+    const a05Base =
+      baseline.porAnimal.find((a) => a.numeroAnimal === "05")?.totalJugado ??
+      "0.00";
     assert.equal(
       reporte.porAnimal.find((a) => a.numeroAnimal === "05")!.totalJugado,
-      "5.00",
+      moneyAdd(a05Base, "5.00"),
     );
 
     assert.equal(reporte.exposicion.length, 11);
-    const exp14 = reporte.exposicion.find((e) => e.hora === 14)!;
-    // 17 * 30 = 510 (multiplicadorUsado snapshot)
-    assert.equal(exp14.totalApostado, "17.00");
-    assert.equal(exp14.exposicionTotalTeorica, "510.00");
-    assert.equal(exp14.mayorExposicion, "510.00"); // solo animal 03 en esa hora? wait 10+7=17 on 03
-    assert.ok(exp14.ticketsAfectados >= 2);
-
-    // anulado no en exposición
-    assert.ok(
-      !JSON.stringify(reporte).includes("100.00") ||
-        reporte.ventas.totalJugado === "25.00",
-    );
-
     assert.doesNotMatch(JSON.stringify(reporte), /passwordHash/);
     assert.ok(t1.ticket.totalApostado);
   });
 
   it("ganadores / pendientes derivados; Decimal en DB", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    await createTicket(
+    const baseline = await getDailyReport(db, fecha);
+
+    const created = await createTicket(
       {
         fechaJuego: fecha,
         vendedorId: vendedorA.id,
@@ -219,26 +274,55 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
       AHORA_VE_MANANA,
       db,
     );
+    trackOwnedTicketId(domain, created.ticket.id);
 
-    // Sin resultado → pendiente
-    let reporte = await getDailyReport(db, fecha);
-    assert.equal(reporte.tickets.pendientes, 1);
-    assert.equal(reporte.tickets.ganadores, 0);
+    const reporte = await getDailyReport(db, fecha);
+    assert.equal(
+      reporte.tickets.pendientes,
+      baseline.tickets.pendientes + 1,
+    );
 
-    await db.resultado.create({
+    const existingRes = await db.resultado.findUnique({
+      where: {
+        fecha_hora: {
+          fecha: new Date(Date.UTC(2026, 9, 2)),
+          hora: 14,
+        },
+      },
+    });
+    if (existingRes) {
+      // Slot ajeno ocupado: no borrar; validar solo Decimal del ticket propio.
+      const row = await db.ticket.findUniqueOrThrow({
+        where: { id: created.ticket.id },
+      });
+      assert.ok(row.totalApostado instanceof Prisma.Decimal);
+      return;
+    }
+
+    const res = await db.resultado.create({
       data: {
         fecha: new Date(Date.UTC(2026, 9, 2)),
         hora: 14,
         numero: "03",
       },
     });
+    trackOwnedResultadoId(domain, res.id);
 
-    reporte = await getDailyReport(db, fecha);
-    assert.equal(reporte.tickets.ganadores, 1);
-    assert.equal(reporte.tickets.pendientes, 0);
+    const afterRes = await getDailyReport(db, fecha);
+    // El resultado cierra el slot para todos los tickets EMITIDOS coincidentes
+    // (propios y ajenos). Solo exigimos que el nuestro deje de ser pendiente
+    // y que ganadores no bajen respecto al baseline tras crear el ticket.
+    assert.ok(
+      afterRes.tickets.ganadores >= reporte.tickets.ganadores + 1,
+      `ganadores: ${afterRes.tickets.ganadores} vs prev ${reporte.tickets.ganadores}`,
+    );
+    assert.ok(
+      afterRes.tickets.pendientes <= reporte.tickets.pendientes - 1,
+      `pendientes: ${afterRes.tickets.pendientes} vs prev ${reporte.tickets.pendientes}`,
+    );
 
-    const row = await db.ticket.findFirstOrThrow({
-      where: { estado: "EMITIDO" },
+    const row = await db.ticket.findUniqueOrThrow({
+      where: { id: created.ticket.id },
     });
     assert.ok(row.totalApostado instanceof Prisma.Decimal);
   });

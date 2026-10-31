@@ -148,6 +148,13 @@ export async function runDbTestSuite(opts: DbSuiteOptions): Promise<never> {
       msg.includes("Falta TEST_DATABASE_URL")
     ) {
       console.log(`SKIPPED (${opts.suiteLabel}): ${msg}`);
+      if (opts.suiteLabel === "acceptance") {
+        console.log(
+          "ACCEPTANCE_RESULT=SKIPPED (not a PASS). " +
+            "Solo uso local con ALLOW_ACCEPTANCE_SKIP=1; " +
+            "no usar como validación de release.",
+        );
+      }
       process.exit(0);
     }
     console.error(msg);

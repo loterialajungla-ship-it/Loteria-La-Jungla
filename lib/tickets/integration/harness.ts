@@ -3,8 +3,9 @@
  *
  * - Crear clientes solo con `createIntegrationPrismaClient` (valida destino TEST
  *   vía `assertIntegrationWriteTarget` antes de `new PrismaClient`).
- * - `resetTicketDomain` / `seedMinimalBusiness` / `createTestUser` exigen la
+ * - `seedMinimalBusiness` / `createTestUser` / cleanup owned exigen la
  *   marca de fábrica + entorno aún alineado con TEST.
+ * - `resetTicketDomain` (wipe global) fue eliminado en FASE 7.74.
  * - No usar `@/lib/prisma` en estas rutas de escritura del harness.
  */
 import { PrismaClient } from "@prisma/client";
@@ -100,35 +101,16 @@ export function assertIntegrationPrismaClient(
 }
 
 /**
- * Limpia datos mutables de tickets/usuarios. Conserva Animal y ConfigNegocio.
+ * @deprecated FASE 7.74 — el wipe global fue eliminado.
+ * Usar `cleanupOwnedTicketDomain` / `createOwnedTicketDomain` en
+ * `owned-ticket-domain.ts`. Esta función lanza siempre.
  */
-export async function resetTicketDomain(db: PrismaClient): Promise<void> {
-  assertIntegrationPrismaClient(db);
-
-  const maxAttempts = 6;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      // Orden FK: movimientos (→ Ticket/Usuario) → líneas → tickets → cuentas → usuarios.
-      // No toca CreditosConfig (singleton de control; fuera del dominio ticket).
-      await db.creditoMovimiento.deleteMany();
-      await db.ticketLinea.deleteMany();
-      await db.ticket.deleteMany();
-      await db.vendedorCreditoCuenta.deleteMany();
-      await db.ticketCounter.deleteMany();
-      await db.auditoria.deleteMany();
-      await db.usuarioSesion.deleteMany();
-      await db.usuario.deleteMany();
-      await db.resultado.deleteMany();
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((r) => setTimeout(r, 250 * attempt));
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("resetTicketDomain falló tras reintentos");
+export async function resetTicketDomain(_db?: PrismaClient): Promise<void> {
+  void _db;
+  throw new Error(
+    "resetTicketDomain eliminado (FASE 7.74): use createOwnedTicketDomain + " +
+      "cleanupOwnedTicketDomain (solo IDs propios). No hay wipe global.",
+  );
 }
 
 export async function seedMinimalBusiness(db: PrismaClient): Promise<void> {
