@@ -17,11 +17,47 @@ import {
 } from "@/lib/creditos/prisma-store";
 import type { CreditosStore } from "@/lib/creditos/store";
 import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
+import { fechaAYYYYMMDD } from "@/lib/fecha";
 import {
   AHORA_VE_MANANA,
   createIntegrationPrismaClient,
+  fechaJuegoDate,
   type IntegrationPrismaClient,
 } from "@/lib/tickets/integration/harness";
+
+/**
+ * Horas de sorteo que usan las pruebas de créditos×venta con el reloj
+ * `AHORA_VE_MANANA` (fecha fixture 2026-10-02). Solo se tocan estos slots.
+ */
+export const CREDITOS_SALE_FIXTURE_HORAS = [14] as const;
+
+/**
+ * Garantiza slots abiertos para la fecha fixture de ventas de integración.
+ *
+ * No borra Resultado por fecha/hora. Si el slot está ocupado por un resultado
+ * preexistente → abort con diagnóstico (no se modifica ni elimina).
+ * Esta suite de créditos no crea Resultado; no hay IDs propios que limpiar.
+ */
+export async function ensureCreditosSaleFixtureSlotsOpen(
+  db: IntegrationPrismaClient,
+): Promise<{ deletedResultados: number }> {
+  const fecha = fechaJuegoDate();
+  const horas = [...CREDITOS_SALE_FIXTURE_HORAS];
+  const rows = await db.resultado.findMany({
+    where: { fecha, hora: { in: horas } },
+    select: { id: true, hora: true, origen: true },
+  });
+  if (rows.length === 0) return { deletedResultados: 0 };
+  const detail = rows
+    .map((r) => `hora=${r.hora} id=${r.id} origen=${r.origen}`)
+    .join("; ");
+  throw new Error(
+    `[creditos-isolated] ABORT: slot(s) de venta ocupados por Resultado ` +
+      `preexistente (fecha fixture ${fechaAYYYYMMDD(fecha)}). ` +
+      `No se borran resultados ajenos. Libere el slot en TEST o aísle la fixture. ` +
+      detail,
+  );
+}
 
 export const CREDITOS_QA_PREFIX = "creditos_qa_";
 export const CREDITOS_QA_PASSWORD = "testpass12";
@@ -489,6 +525,11 @@ export async function bootstrapIsolatedCreditos(
   }
 
   registry.cleanupAllowed = true;
+
+  // Defensa ante residuos de auto-publish u otras suites en la fecha fixture:
+  // aborta si el slot está ocupado (no borra resultados ajenos).
+  await ensureCreditosSaleFixtureSlotsOpen(db);
+
   const virtualControlOn = buildVirtualCreditosConfig({
     controlActivo: true,
     inicioEn: new Date(AHORA_VE_MANANA.getTime() - 3600_000),

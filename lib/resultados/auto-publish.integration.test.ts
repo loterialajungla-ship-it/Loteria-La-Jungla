@@ -3,6 +3,10 @@
  * Solo vía `npm run test:integration` (`RUN_INTEGRATION=1`).
  * Cliente: `createIntegrationPrismaClient` tras assert de destino TEST.
  * Excluida de `npm test` por sufijo `.integration.test.ts`.
+ *
+ * Ownership: solo se borran Resultado cuyos IDs registró esta suite.
+ * Nunca deleteMany por fecha/hora sola. Si un slot necesario está ocupado
+ * por un resultado ajeno → abort diagnóstico (no se modifica).
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
@@ -15,6 +19,8 @@ import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration
 import {
   runAutomaticResultsPublish,
   tryCreateAutomaticResult,
+  type AutoPublishRunResult,
+  type AutoPublishSlotResult,
 } from "@/lib/resultados/auto-publish";
 import { authorizeCronRequest } from "@/lib/resultados/cron-auth";
 import {
@@ -41,6 +47,10 @@ const FECHA = new Date(Date.UTC(2026, 9, 2));
 
 describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
   let db: ReturnType<typeof createIntegrationPrismaClient>;
+  /** Admins creados por esta suite (cleanup acotado en after). */
+  const ownedAdminIds = new Set<string>();
+  /** Resultados creados por esta suite — única base de cleanup. */
+  const ownedResultadoIds = new Set<string>();
 
   async function seedCatalogo38(): Promise<void> {
     for (const a of ANIMALES_38) {
@@ -56,6 +66,75 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
     }
   }
 
+  function trackResultadoId(id: string): void {
+    ownedResultadoIds.add(id);
+  }
+
+  function trackFromSlotResult(r: AutoPublishSlotResult): void {
+    if (r.status === "created") {
+      trackResultadoId(r.resultadoId);
+    }
+  }
+
+  function trackFromRun(run: AutoPublishRunResult): void {
+    for (const r of run.results) trackFromSlotResult(r);
+  }
+
+  /**
+   * Tras prepareFixtureSlots, cualquier fila en esos slots es nuestra.
+   * Útil cuando skipped_exists / carrera no devuelve resultadoId.
+   */
+  async function claimSlotIds(horas: number[]): Promise<void> {
+    const rows = await db.resultado.findMany({
+      where: { fecha: FECHA, hora: { in: horas } },
+      select: { id: true },
+    });
+    for (const r of rows) trackResultadoId(r.id);
+  }
+
+  /** Limpia únicamente IDs propios + auditorías RESULTADO ligadas. */
+  async function cleanupOwnedResultados(): Promise<void> {
+    const ids = [...ownedResultadoIds];
+    if (ids.length === 0) return;
+    await db.auditoria.deleteMany({
+      where: { entidad: "RESULTADO", entidadId: { in: ids } },
+    });
+    await db.resultado.deleteMany({ where: { id: { in: ids } } });
+    ownedResultadoIds.clear();
+  }
+
+  /**
+   * Si hay Resultado preexistente (no owned) en los slots pedidos → abort.
+   * No modifica ni elimina filas ajenas.
+   */
+  async function assertFixtureSlotsFree(horas: number[]): Promise<void> {
+    const rows = await db.resultado.findMany({
+      where: { fecha: FECHA, hora: { in: horas } },
+      select: { id: true, hora: true, origen: true },
+    });
+    const foreign = rows.filter((r) => !ownedResultadoIds.has(r.id));
+    if (foreign.length === 0) return;
+    const detail = foreign
+      .map((r) => `hora=${r.hora} id=${r.id} origen=${r.origen}`)
+      .join("; ");
+    throw new Error(
+      `[auto-publish] ABORT: slot(s) ocupados por Resultado preexistente ` +
+        `(fecha=2026-10-02). No se borran resultados ajenos. ${detail}`,
+    );
+  }
+
+  async function prepareFixtureSlots(horas: number[]): Promise<void> {
+    await cleanupOwnedResultados();
+    await assertFixtureSlotsFree(horas);
+  }
+
+  async function trackAdmin(
+    user: Awaited<ReturnType<typeof createTestUser>>,
+  ): Promise<Awaited<ReturnType<typeof createTestUser>>> {
+    ownedAdminIds.add(user.id);
+    return user;
+  }
+
   before(async () => {
     assertIntegrationPointsAtTestDatabase();
     db = createIntegrationPrismaClient();
@@ -65,35 +144,52 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
 
   beforeEach(async () => {
     assertIntegrationPointsAtTestDatabase();
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    await cleanupOwnedResultados();
   });
 
   after(async () => {
-    await db.$disconnect();
+    try {
+      await cleanupOwnedResultados();
+      for (const adminId of ownedAdminIds) {
+        await db.auditoria.deleteMany({
+          where: {
+            OR: [
+              { usuarioId: adminId },
+              { entidad: "USUARIO", entidadId: adminId },
+            ],
+          },
+        });
+        try {
+          await db.usuario.delete({ where: { id: adminId } });
+        } catch {
+          // FK Restrict residual: no forzar wipe global.
+        }
+      }
+      ownedAdminIds.clear();
+    } finally {
+      await db.$disconnect();
+    }
   });
 
   it("1) sorteo futuro: no genera nada antes de la hora", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
-
+    // Ninguna franja vence a las 08:00 VE; no exige slots libres.
     const run = await runAutomaticResultsPublish(db, AHORA_08_VE);
+    trackFromRun(run);
     assert.equal(run.created, 0);
     assert.equal(run.processed, 0);
-    const count = await db.resultado.count({ where: { fecha: FECHA } });
-    assert.equal(count, 0);
+    assert.equal(ownedResultadoIds.size, 0);
   });
 
   it("2) hora llegada sin resultado: genera automático", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    await prepareFixtureSlots([9, 10]);
 
     const run = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(run);
     assert.equal(run.created, 2);
     assert.equal(run.processed, 2);
 
     const rows = await db.resultado.findMany({
-      where: { fecha: FECHA },
+      where: { id: { in: [...ownedResultadoIds] } },
       orderBy: { hora: "asc" },
     });
     assert.equal(rows.length, 2);
@@ -108,15 +204,14 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
   });
 
   it("3) resultado manual se conserva", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    await prepareFixtureSlots([9, 10]);
     const admin = await createTestUser(db, {
       usuario: `adm_manual_${Date.now()}`,
       nombre: "Admin Manual",
       rol: "ADMIN",
     });
 
-    await db.resultado.create({
+    const manual = await db.resultado.create({
       data: {
         fecha: FECHA,
         hora: 9,
@@ -124,24 +219,26 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
         origen: "MANUAL",
       },
     });
+    trackResultadoId(manual.id);
 
     const run = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(run);
     assert.equal(run.created, 1);
     assert.equal(run.skippedExists, 1);
 
     const r9 = await db.resultado.findUnique({
       where: { fecha_hora: { fecha: FECHA, hora: 9 } },
     });
+    assert.equal(r9?.id, manual.id);
     assert.equal(r9?.numero, "05");
     assert.equal(r9?.origen, "MANUAL");
     void admin;
   });
 
   it("4) automático previo: no genera segundo", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    await prepareFixtureSlots([9, 10]);
 
-    await db.resultado.create({
+    const prior = await db.resultado.create({
       data: {
         fecha: FECHA,
         hora: 9,
@@ -149,44 +246,49 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
         origen: "AUTOMATICO",
       },
     });
+    trackResultadoId(prior.id);
 
     const first = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(first);
     assert.equal(first.created, 1);
     assert.equal(first.skippedExists, 1);
 
     const second = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(second);
     assert.equal(second.created, 0);
     assert.equal(second.skippedExists, 2);
 
     const r9 = await db.resultado.findUnique({
       where: { fecha_hora: { fecha: FECHA, hora: 9 } },
     });
+    assert.equal(r9?.id, prior.id);
     assert.equal(r9?.numero, "15");
     assert.equal(r9?.origen, "AUTOMATICO");
   });
 
   it("5) dos ejecuciones simultáneas → un solo resultado", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    await prepareFixtureSlots([11]);
 
     const slot = { fecha: FECHA, hora: 11 as const };
     const [a, b] = await Promise.all([
       tryCreateAutomaticResult(db, slot, AHORA_16_VE),
       tryCreateAutomaticResult(db, slot, AHORA_16_VE),
     ]);
+    trackFromSlotResult(a);
+    trackFromSlotResult(b);
+    await claimSlotIds([11]);
 
     const statuses = [a.status, b.status].sort();
     assert.deepEqual(statuses, ["created", "skipped_exists"]);
 
     const count = await db.resultado.count({
-      where: { fecha: FECHA, hora: 11 },
+      where: { id: { in: [...ownedResultadoIds] }, hora: 11 },
     });
     assert.equal(count, 1);
   });
 
   it("6) manual concurrente con auto: un solo resultado, auto no pisa", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    await prepareFixtureSlots([12]);
 
     const slot = { fecha: FECHA, hora: 12 };
 
@@ -206,11 +308,15 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
         ),
       tryCreateAutomaticResult(db, slot, AHORA_16_VE),
     ]);
+    if (manualSettled.ok) trackResultadoId(manualSettled.row.id);
+    trackFromSlotResult(auto);
+    await claimSlotIds([12]);
 
     const row = await db.resultado.findUnique({
       where: { fecha_hora: { fecha: FECHA, hora: 12 } },
     });
     assert.ok(row);
+    assert.ok(ownedResultadoIds.has(row.id));
     assert.equal(
       await db.resultado.count({ where: { fecha: FECHA, hora: 12 } }),
       1,
@@ -231,10 +337,10 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
   });
 
   it("7) recuperación tras varias horas: procesa vencidos pendientes", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    const horas = [9, 10, 11, 12, 13, 14, 15, 16];
+    await prepareFixtureSlots(horas);
 
-    await db.resultado.create({
+    const manual = await db.resultado.create({
       data: {
         fecha: FECHA,
         hora: 9,
@@ -242,42 +348,49 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
         origen: "MANUAL",
       },
     });
+    trackResultadoId(manual.id);
 
     const run = await runAutomaticResultsPublish(db, AHORA_16_VE);
+    trackFromRun(run);
     // Vencidas 9–16 (8 franjas); 9 ya existe → 7 creadas
     assert.equal(run.processed, 8);
     assert.equal(run.created, 7);
     assert.equal(run.skippedExists, 1);
 
-    const horas = (
+    const ownedHoras = (
       await db.resultado.findMany({
-        where: { fecha: FECHA },
+        where: { id: { in: [...ownedResultadoIds] } },
         select: { hora: true },
         orderBy: { hora: "asc" },
       })
     ).map((r) => r.hora);
-    assert.deepEqual(horas, [9, 10, 11, 12, 13, 14, 15, 16]);
+    assert.deepEqual(ownedHoras, horas);
   });
 
   it("8) fecha America/Caracas correcta en filas creadas", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
+    await prepareFixtureSlots([9, 10]);
     const run = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(run);
     assert.ok(run.created >= 1);
     for (const r of run.results) {
       if (r.status === "created") {
         assert.equal(r.fecha, "2026-10-02");
       }
     }
-    const row = await db.resultado.findFirst({ where: { fecha: FECHA } });
-    assert.equal(fechaAYYYYMMDD(row!.fecha), "2026-10-02");
+    const row = await db.resultado.findFirst({
+      where: { id: { in: [...ownedResultadoIds] } },
+    });
+    assert.ok(row);
+    assert.equal(fechaAYYYYMMDD(row.fecha), "2026-10-02");
   });
 
   it("9) resultado visible por fecha/hora (consulta pública equivalente)", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await runAutomaticResultsPublish(db, AHORA_10_VE);
+    await prepareFixtureSlots([9, 10]);
+    const run = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(run);
 
     const publicQuery = await db.resultado.findMany({
-      where: { fecha: FECHA },
+      where: { id: { in: [...ownedResultadoIds] } },
       include: { animal: true },
       orderBy: { hora: "asc" },
     });
@@ -289,13 +402,17 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
   });
 
   it("10) auditoría con origen AUTOMATICO y usuario sistema", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
-    await db.auditoria.deleteMany();
+    await prepareFixtureSlots([9, 10]);
 
-    await runAutomaticResultsPublish(db, AHORA_10_VE);
+    const run = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(run);
 
     const events = await db.auditoria.findMany({
-      where: { accion: "CREAR_RESULTADO" },
+      where: {
+        accion: "CREAR_RESULTADO",
+        entidad: "RESULTADO",
+        entidadId: { in: [...ownedResultadoIds] },
+      },
       orderBy: { createdAt: "asc" },
     });
     assert.ok(events.length >= 2);
@@ -313,8 +430,9 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
   });
 
   it("11) animalito siempre del catálogo válido", async () => {
-    await db.resultado.deleteMany({ where: { fecha: FECHA } });
+    await prepareFixtureSlots([9, 10, 11, 12, 13, 14, 15, 16]);
     const run = await runAutomaticResultsPublish(db, AHORA_16_VE);
+    trackFromRun(run);
     const valid = new Set(ANIMALES_38.map((a) => a.numero));
     for (const r of run.results) {
       if (r.status === "created" || r.status === "skipped_exists") {
@@ -352,14 +470,18 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
   });
 
   it("13) cron no reemplaza MANUAL ni AUTOMATICO existente", async () => {
-    await db.resultado.create({
+    await prepareFixtureSlots([9, 10]);
+    const m9 = await db.resultado.create({
       data: { fecha: FECHA, hora: 9, numero: "05", origen: "MANUAL" },
     });
-    await db.resultado.create({
+    const m10 = await db.resultado.create({
       data: { fecha: FECHA, hora: 10, numero: "15", origen: "AUTOMATICO" },
     });
+    trackResultadoId(m9.id);
+    trackResultadoId(m10.id);
 
     const run = await runAutomaticResultsPublish(db, AHORA_10_VE);
+    trackFromRun(run);
     assert.equal(run.ok, true);
     assert.equal(run.created, 0);
     assert.equal(run.failed, 0);
@@ -371,22 +493,28 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
     const r10 = await db.resultado.findUnique({
       where: { fecha_hora: { fecha: FECHA, hora: 10 } },
     });
+    assert.equal(r9?.id, m9.id);
     assert.equal(r9?.numero, "05");
     assert.equal(r9?.origen, "MANUAL");
+    assert.equal(r10?.id, m10.id);
     assert.equal(r10?.numero, "15");
     assert.equal(r10?.origen, "AUTOMATICO");
   });
 
   it("14) admin corrige AUTOMATICO → MANUAL con confirmación y motivo", async () => {
-    const admin = await createTestUser(db, {
-      usuario: `adm_override_${Date.now()}`,
-      nombre: "Admin Override",
-      rol: "ADMIN",
-    });
+    await prepareFixtureSlots([13]);
+    const admin = await trackAdmin(
+      await createTestUser(db, {
+        usuario: `adm_override_${Date.now()}`,
+        nombre: "Admin Override",
+        rol: "ADMIN",
+      }),
+    );
 
-    await db.resultado.create({
+    const prior = await db.resultado.create({
       data: { fecha: FECHA, hora: 13, numero: "00", origen: "AUTOMATICO" },
     });
+    trackResultadoId(prior.id);
 
     const saved = await correctPublishedResult(db, {
       fecha: FECHA,
@@ -397,6 +525,7 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
       motivo: "Corrección controlada en prueba de integración",
       expectedNumero: "00",
     });
+    trackResultadoId(saved.id);
     assert.equal(saved.numero, "03");
     assert.equal(saved.origen, "MANUAL");
 
@@ -419,11 +548,14 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
   });
 
   it("15) carrera createManual + auto: un solo resultado válido", async () => {
-    const admin = await createTestUser(db, {
-      usuario: `adm_race_${Date.now()}`,
-      nombre: "Admin Race",
-      rol: "ADMIN",
-    });
+    await prepareFixtureSlots([14]);
+    const admin = await trackAdmin(
+      await createTestUser(db, {
+        usuario: `adm_race_${Date.now()}`,
+        nombre: "Admin Race",
+        rol: "ADMIN",
+      }),
+    );
 
     const slot = { fecha: FECHA, hora: 14 };
     const [manualOutcome, auto] = await Promise.all([
@@ -438,9 +570,12 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
       ),
       tryCreateAutomaticResult(db, slot, AHORA_16_VE),
     ]);
+    if (manualOutcome.ok) trackResultadoId(manualOutcome.row.id);
+    trackFromSlotResult(auto);
+    await claimSlotIds([14]);
 
     const count = await db.resultado.count({
-      where: { fecha: FECHA, hora: 14 },
+      where: { id: { in: [...ownedResultadoIds] }, hora: 14 },
     });
     assert.equal(count, 1);
 
@@ -448,6 +583,7 @@ describe("auto-publish resultados (TEST DB)", { skip: !ENABLED }, () => {
       where: { fecha_hora: { fecha: FECHA, hora: 14 } },
     });
     assert.ok(row);
+    assert.ok(ownedResultadoIds.has(row.id));
 
     // create-only: si admin gana → MANUAL/05; si auto gana primero → admin recibe
     // CORRECTION_REQUIRED y la fila queda AUTOMATICO (sin update silencioso).

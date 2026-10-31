@@ -3,9 +3,13 @@
  *
  * - Requiere `TEST_DATABASE_URL` = endpoint TEST allowlisted (mismo guard que
  *   integración vía `runDbTestSuite` / `assertSafeTestDatabase`).
- * - Si **falta** `TEST_DATABASE_URL` → SKIPPED (exit 0); no conecta a otra DB.
+ * - Si **falta** `TEST_DATABASE_URL`:
+ *     - Por defecto → exit 1 (FAIL). Una validación de release no puede
+ *       interpretarse como aprobada si la suite no se ejecutó.
+ *     - Solo con `ALLOW_ACCEPTANCE_SKIP=1` → SKIPPED exit 0, con banner
+ *       `ACCEPTANCE_RESULT=SKIPPED (not a PASS)` para diferenciarlo de PASS.
  * - Si la URL existe pero es inválida / no allowlisted / colisiona con prod →
- *   exit 1 (no skip).
+ *   exit 1 (no skip). Nunca fallback a producción.
  * - Suites: `*.acceptance.test.ts` (excluidas de `npm test`).
  * - No registra URLs, passwords ni tokens.
  */
@@ -23,10 +27,13 @@ function listAcceptanceFiles(): string[] {
     .map((name) => path.join(dir, name));
 }
 
+/** Solo uso local explícito; CI/release deben omitir esta variable. */
+const allowLocalSkip = process.env.ALLOW_ACCEPTANCE_SKIP === "1";
+
 runDbTestSuite({
   runFlag: "RUN_ACCEPTANCE",
   testFiles: listAcceptanceFiles(),
-  missingUrlMode: "skip",
+  missingUrlMode: allowLocalSkip ? "skip" : "fail",
   suiteLabel: "acceptance",
   beforeRun: () => {
     // Compat: si el .env local aún tiene ADMIN_PASSWORD, mapear a bootstrap

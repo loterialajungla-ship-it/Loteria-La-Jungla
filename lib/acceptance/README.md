@@ -10,9 +10,13 @@ Requiere `TEST_DATABASE_URL` aislada (mismo guard que integración).
 
 | Situación | Resultado |
 | --- | --- |
-| Sin `TEST_DATABASE_URL` | `SKIPPED` (exit 0) |
-| URL = `DATABASE_URL` / `DIRECT_URL` | Abort (exit 1) |
-| URL de test OK | Suite real |
+| Sin `TEST_DATABASE_URL` (default / release / CI) | **FAIL** (exit 1) — la suite no se ejecutó |
+| Sin `TEST_DATABASE_URL` + `ALLOW_ACCEPTANCE_SKIP=1` | `SKIPPED` (exit 0) + banner `ACCEPTANCE_RESULT=SKIPPED (not a PASS)` |
+| URL = `DATABASE_URL` / `DIRECT_URL` / no allowlisted | Abort (exit 1) |
+| URL de test OK | Suite real → PASS solo si todos los casos pasan |
+
+**Release:** no interpretar exit 0 con `ACCEPTANCE_RESULT=SKIPPED` como aprobación.
+Sin `ALLOW_ACCEPTANCE_SKIP`, la ausencia de URL falla de forma cerrada.
 
 Separado de:
 

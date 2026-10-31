@@ -5,8 +5,8 @@
  * - Config de control inyectada vía wrapStoreWithVirtualConfig.
  * - Limpieza solo por IDs del run (`creditos_qa_<runId>_…`).
  *
- * Ejecutar SOLO con: `npm run test:integration:creditos`
- * (no usar `npm run test:integration` para esta política de aislamiento).
+ * Ejecutar con: `npm run test:integration:creditos` o la suite completa
+ * (`npm run test:integration`, un archivo por proceso).
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
@@ -22,6 +22,7 @@ import {
   boomOnInsertTipo,
   bootstrapIsolatedCreditos,
   buildVirtualCreditosConfig,
+  ensureCreditosSaleFixtureSlotsOpen,
   wrapStoreWithVirtualConfig,
   type IsolatedCreditosContext,
 } from "@/lib/creditos/integration/isolated-harness";
@@ -89,6 +90,8 @@ describe(
 
     beforeEach(async () => {
       if (!ctx || bootstrapError) return;
+      // Reafirmar slots abiertos en la fecha fixture (hora 14) sin wipe global.
+      await ensureCreditosSaleFixtureSlotsOpen(ctx.db);
       // Usuarios frescos por caso: evita acumulación de saldo entre tests
       // sin wipe global.
       admin = await ctx.createAdmin();

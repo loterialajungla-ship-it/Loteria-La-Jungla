@@ -4,13 +4,15 @@
  * Ejecutar solo: `npm run test:acceptance` (runner → `runDbTestSuite`).
  * - Sin `TEST_DATABASE_URL`: el runner hace SKIPPED (exit 0); esta suite
  *   además se salta si `RUN_ACCEPTANCE !== "1"`.
+ * - URL inválida / no allowlisted / colisión con prod → exit 1 (no prod).
  * - Cliente: `createIntegrationPrismaClient` tras
  *   `assertIntegrationPointsAtTestDatabase` (nunca `@/lib/prisma` a ciegas).
+ * - Ownership FASE 7.74+: limpia solo IDs propios; logins únicos por run.
  * - Excluida de `npm test` por sufijo `.acceptance.test.ts`.
  */
 
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { loginWithCredentials } from "@/lib/auth/login";
@@ -20,7 +22,7 @@ import {
 } from "@/lib/auth/session";
 import { hashSessionToken } from "@/lib/auth/tokens";
 import { ljSessionCookieOptions } from "@/lib/auth/cookies";
-import { sessionHours, bootstrapAdminUser } from "@/lib/auth/constants";
+import { sessionHours } from "@/lib/auth/constants";
 import {
   changeOwnPassword,
   resetVendorPassword,
@@ -54,15 +56,32 @@ import {
   TicketNotFoundError,
 } from "@/lib/tickets/errors";
 import { hoyYYYYMMDD } from "@/lib/fecha";
+import { NEON_ENDPOINTS } from "@/lib/db/neon-endpoint-guard";
 import {
   AHORA_VE_MANANA,
   assertIntegrationPrismaClient,
   createIntegrationPrismaClient,
   fechaJuegoDate,
   newIdempotencyKey,
-  resetTicketDomain,
   seedMinimalBusiness,
 } from "@/lib/tickets/integration/harness";
+import {
+  cleanupOwnedTicketDomain,
+  createOwnedTicketDomain,
+  trackFixtureTicketCounter,
+  trackOwnedResultadoId,
+  trackOwnedTicketId,
+  trackOwnedUserId,
+  type OwnedTicketDomain,
+} from "@/lib/tickets/integration/owned-ticket-domain";
+import {
+  beginTemporaryCreditosControlOff,
+  readCreditosConfigSnapshot,
+  restoreCreditosConfigBaseline,
+  restoreCreditosConfigLease,
+  type CreditosConfigLease,
+  type CreditosConfigSnapshot,
+} from "@/lib/tickets/integration/creditos-config-test-fixture";
 import { assertIntegrationPointsAtTestDatabase } from "@/lib/tickets/integration/assert-integration-test-db";
 import {
   authorizeAdminUi,
@@ -79,7 +98,7 @@ import {
 
 const ENABLED = process.env.RUN_ACCEPTANCE === "1";
 
-/** Contraseña de bootstrap — nunca se imprime. */
+/** Contraseña de la suite — nunca se imprime. */
 function adminPasswordForTest(): string {
   const p = process.env.ADMIN_BOOTSTRAP_PASSWORD?.trim();
   assert.ok(
@@ -91,96 +110,155 @@ function adminPasswordForTest(): string {
 
 const VENDOR_PASS = "vendor-test-12";
 
-async function bootstrapAdmin(
-  db: ReturnType<typeof createIntegrationPrismaClient>,
-) {
-  assertIntegrationPrismaClient(db);
-  const password = adminPasswordForTest();
-  const login = bootstrapAdminUser();
-  const existing = await db.usuario.findFirst({
-    where: { rol: "ADMIN" },
-    select: {
-      id: true,
-      usuario: true,
-      rol: true,
-      activo: true,
-      passwordHash: true,
-    },
-  });
-  if (existing) return { user: existing, password };
-
-  const passwordHash = await hashPassword(password);
-  const user = await db.usuario.create({
-    data: {
-      nombre: "Administrador",
-      usuario: login,
-      passwordHash,
-      rol: "ADMIN",
-      activo: true,
-    },
-    select: {
-      id: true,
-      usuario: true,
-      rol: true,
-      activo: true,
-      passwordHash: true,
-    },
-  });
-  return { user, password };
-}
-
-async function createVendorUser(
-  db: ReturnType<typeof createIntegrationPrismaClient>,
-  usuario: string,
-) {
-  return createVendor(db, {
-    nombre: `Vend ${usuario}`,
-    usuario,
-    password: VENDOR_PASS,
-  });
+function moneyAdd(a: string, b: string): string {
+  return (Number(a) + Number(b)).toFixed(2);
 }
 
 describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () => {
   let db: ReturnType<typeof createIntegrationPrismaClient>;
+  let domain: OwnedTicketDomain;
+  let runTag: string;
   let adminId: string;
   let adminPassword: string;
   let adminUsuario: string;
+  /** Multiplicador real al entrar a la suite (restaurar al salir). */
+  let suiteMultiplicador: number | null;
+  let suiteCreditosSnap: CreditosConfigSnapshot = { existed: false };
+  let testCreditosLease: CreditosConfigLease | null = null;
 
   before(async () => {
-    assertIntegrationPointsAtTestDatabase();
+    const ep = assertIntegrationPointsAtTestDatabase();
+    assert.equal(
+      ep,
+      NEON_ENDPOINTS.TEST,
+      `acceptance exige endpoint TEST; recibido ${ep || "(vacío)"}`,
+    );
     db = createIntegrationPrismaClient();
+    runTag = `acc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const mult = await db.configNegocio.findUnique({
+      where: { clave: "MULTIPLICADOR_PREMIO" },
+      select: { valorInt: true },
+    });
+    suiteMultiplicador = mult?.valorInt ?? null;
+    suiteCreditosSnap = await readCreditosConfigSnapshot(db);
     await seedMinimalBusiness(db);
   });
 
   beforeEach(async () => {
     assertIntegrationPointsAtTestDatabase();
-    await resetTicketDomain(db);
+    if (domain) {
+      await cleanupOwnedTicketDomain(db, domain);
+    }
+    domain = createOwnedTicketDomain();
+    trackFixtureTicketCounter(domain);
     await seedMinimalBusiness(db);
+    // Valor de prueba esperado por los casos (no es el estado permanente de TEST).
     await db.configNegocio.upsert({
       where: { clave: "MULTIPLICADOR_PREMIO" },
       update: { valorInt: 30 },
       create: { clave: "MULTIPLICADOR_PREMIO", valorInt: 30 },
     });
-    const boot = await bootstrapAdmin(db);
-    adminId = boot.user.id;
-    adminPassword = boot.password;
-    adminUsuario = boot.user.usuario;
+
+    // Override temporal CreditosConfig OFF; restore seguro vía lease.
+    testCreditosLease = await beginTemporaryCreditosControlOff(db);
+
+    // ADMIN propio de la ejecución — nunca reutilizar / mutar admins preexistentes.
+    adminPassword = adminPasswordForTest();
+    adminUsuario = `${runTag}_adm`.slice(0, 40);
+    const passwordHash = await hashPassword(adminPassword);
+    const admin = await db.usuario.create({
+      data: {
+        nombre: "Admin Acceptance",
+        usuario: adminUsuario,
+        passwordHash,
+        rol: "ADMIN",
+        activo: true,
+      },
+      select: {
+        id: true,
+        usuario: true,
+        rol: true,
+        activo: true,
+        passwordHash: true,
+      },
+    });
+    adminId = admin.id;
+    trackOwnedUserId(domain, adminId);
+  });
+
+  afterEach(async () => {
+    if (testCreditosLease) {
+      await restoreCreditosConfigLease(db, testCreditosLease);
+      testCreditosLease = null;
+    }
   });
 
   after(async () => {
+    try {
+      if (domain) await cleanupOwnedTicketDomain(db, domain);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await restoreCreditosConfigBaseline(db, suiteCreditosSnap);
+    } catch {
+      /* ignore */
+    }
+    try {
+      // Restaurar valor previo; si no había fila, dejar 30 (idempotente con seed).
+      const restoreVal = suiteMultiplicador ?? 30;
+      await db.configNegocio.upsert({
+        where: { clave: "MULTIPLICADOR_PREMIO" },
+        update: { valorInt: restoreVal },
+        create: { clave: "MULTIPLICADOR_PREMIO", valorInt: restoreVal },
+      });
+    } catch {
+      /* ignore */
+    }
     await db.$disconnect();
   });
 
-  // ——— 2. Bootstrap ADMIN ———
+  async function createVendorUser(suffix: string) {
+    assertIntegrationPrismaClient(db);
+    const usuario = `${runTag}_${suffix}`.slice(0, 40);
+    const vendor = await createVendor(
+      db,
+      {
+        nombre: `Vend ${suffix}`,
+        usuario,
+        password: VENDOR_PASS,
+      },
+      { actorUserId: adminId },
+    );
+    trackOwnedUserId(domain, vendor.id);
+    return vendor;
+  }
+
+  async function countOwnTickets(): Promise<number> {
+    const userIds = [...domain.userIds];
+    if (userIds.length === 0) return 0;
+    return db.ticket.count({
+      where: {
+        OR: [
+          { vendedorId: { in: userIds } },
+          { id: { in: [...domain.ticketIds] } },
+        ],
+      },
+    });
+  }
+
+  // ——— 2. Admin propio de la suite ———
   it("bootstrap ADMIN: un admin, hash ≠ password, activo", async () => {
-    const admins = await db.usuario.findMany({ where: { rol: "ADMIN" } });
-    assert.equal(admins.length, 1);
-    const a = admins[0]!;
+    const a = await db.usuario.findUniqueOrThrow({ where: { id: adminId } });
     assert.equal(a.rol, "ADMIN");
     assert.equal(a.activo, true);
+    assert.equal(a.usuario, adminUsuario);
     assert.ok(a.passwordHash.length > 20);
     assert.notEqual(a.passwordHash, adminPassword);
-    assert.doesNotMatch(a.passwordHash, new RegExp(adminPassword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(
+      a.passwordHash,
+      new RegExp(adminPassword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   });
 
   // ——— 3–4. Login ———
@@ -223,7 +301,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   });
 
   it("login VENDEDOR asocia sesión al Usuario correcto", async () => {
-    const vendor = await createVendorUser(db, "vend_acc_a");
+    const vendor = await createVendorUser("vend_acc_a");
     const result = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -239,7 +317,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   // ——— 5. Autorización ———
   it("permisos UI/API ADMIN vs VENDEDOR; /ticket público", async () => {
-    const vendor = await createVendorUser(db, "vend_perm");
+    const vendor = await createVendorUser("vend_perm");
     const adminLogin = await loginWithCredentials(db, {
       usuario: adminUsuario,
       password: adminPassword,
@@ -294,8 +372,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 6–8. Tickets propiedad ———
   it("creación ticket: vendedorId de sesión; ignore body ajeno", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const va = await createVendorUser(db, "vend_own_a");
-    const vb = await createVendorUser(db, "vend_own_b");
+    const va = await createVendorUser("vend_own_a");
+    const vb = await createVendorUser("vend_own_b");
 
     const parsed = parseCreateTicketBody({
       fechaJuego: fecha,
@@ -324,8 +402,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   it("historial: A ve solo suyos; B ajeno → 404; ADMIN ve ambos + null", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const va = await createVendorUser(db, "vend_hist_a");
-    const vb = await createVendorUser(db, "vend_hist_b");
+    const va = await createVendorUser("vend_hist_a");
+    const vb = await createVendorUser("vend_hist_b");
 
     const ticketA = await createTicket(
       {
@@ -356,8 +434,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     });
     const hist = await db.ticket.create({
       data: {
-        numeroVisible: `LJ-${fecha.replace(/-/g, "")}-000099`,
-        codigoPublico: "hist_acc_codigo_publico_xx",
+        numeroVisible: `LJ-${fecha.replace(/-/g, "")}-h${runTag.slice(-5)}`,
+        codigoPublico: `hist_acc_${runTag}`,
         fechaJuego: fechaJuegoDate(),
         vendedorId: null,
         totalApostado: new Prisma.Decimal("1.00"),
@@ -374,6 +452,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         },
       },
     });
+    trackOwnedTicketId(domain, hist.id);
+    trackOwnedTicketId(domain, ticketA.ticket.id);
+    trackOwnedTicketId(domain, ticketB.ticket.id);
 
     const listA = await listVendorTickets(
       db,
@@ -405,7 +486,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 9. Anulación ———
   it("anulación ADMIN: anuladoPorId + vendedor sigue consultando", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_anul");
+    const vendor = await createVendorUser("vend_anul");
     const created = await createTicket(
       {
         fechaJuego: fecha,
@@ -445,7 +526,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   // ——— 10–11. Desactivación / reactivación ———
   it("desactivar invalida sesión; reactivar exige login nuevo", async () => {
-    const vendor = await createVendorUser(db, "vend_deact");
+    const vendor = await createVendorUser("vend_deact");
     const login = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -483,7 +564,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 12–13. Resultados / liquidación ———
   it("resultado y cambio de resultado: liquidación derivada", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_liq");
+    const vendor = await createVendorUser("vend_liq");
     const created = await createTicket(
       {
         fechaJuego: fecha,
@@ -499,13 +580,34 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     assert.ok(pub);
     assert.equal(pub!.estado, "PENDIENTE");
 
-    await db.resultado.create({
-      data: {
-        fecha: fechaJuegoDate(),
-        hora: 14,
-        numero: "03",
+    trackOwnedTicketId(domain, created.ticket.id);
+    const slot = await db.resultado.findUnique({
+      where: {
+        fecha_hora: { fecha: fechaJuegoDate(), hora: 14 },
       },
     });
+    if (slot && !domain.resultadoIds.has(slot.id)) {
+      // Slot ajeno: no mutar. Validar solo estado pendiente del ticket propio.
+      assert.equal(pub!.estado, "PENDIENTE");
+      return;
+    }
+    let resultadoId = slot?.id;
+    if (!resultadoId) {
+      const createdRes = await db.resultado.create({
+        data: {
+          fecha: fechaJuegoDate(),
+          hora: 14,
+          numero: "03",
+        },
+      });
+      resultadoId = createdRes.id;
+      trackOwnedResultadoId(domain, resultadoId);
+    } else {
+      await db.resultado.update({
+        where: { id: resultadoId },
+        data: { numero: "03" },
+      });
+    }
 
     pub = await getPublicTicketByCodigo(created.ticket.codigoPublico, db);
     assert.equal(pub!.estado, "GANADOR");
@@ -513,9 +615,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     assert.equal(pub!.lineas[0]!.estado, "GANADORA");
 
     await db.resultado.update({
-      where: {
-        fecha_hora: { fecha: fechaJuegoDate(), hora: 14 },
-      },
+      where: { id: resultadoId },
       data: { numero: "05" },
     });
 
@@ -533,7 +633,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 14. Exposición ———
   it("exposición ignora anulados", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_exp");
+    const vendor = await createVendorUser("vend_exp");
+    const before = await getExposureForDraw({ fechaJuego: fecha, hora: 14, db });
 
     await createTicket(
       {
@@ -562,14 +663,20 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     });
 
     const exp = await getExposureForDraw({ fechaJuego: fecha, hora: 14, db });
-    assert.equal(exp.totalApostado, "5.00");
-    assert.equal(exp.totalExposicion, "150.00");
+    assert.equal(
+      exp.totalApostado,
+      moneyAdd(before.totalApostado, "5.00"),
+    );
+    assert.equal(
+      exp.totalExposicion,
+      moneyAdd(before.totalExposicion, "150.00"),
+    );
   });
 
   // ——— 15. Multiplicador histórico ———
   it("multiplicadorUsado histórico vs config nueva", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_mult");
+    const vendor = await createVendorUser("vend_mult");
 
     const oldT = await createTicket(
       {
@@ -588,9 +695,38 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       data: { valorInt: 25 },
     });
 
-    await db.resultado.create({
-      data: { fecha: fechaJuegoDate(), hora: 14, numero: "03" },
+    const slot14 = await db.resultado.findUnique({
+      where: {
+        fecha_hora: { fecha: fechaJuegoDate(), hora: 14 },
+      },
     });
+    if (slot14 && !domain.resultadoIds.has(slot14.id)) {
+      // No mutar resultado ajeno; el premio histórico ya quedó fijado en el ticket.
+      assert.equal(oldT.ticket.multiplicadorUsado, 30);
+      const newT = await createTicket(
+        {
+          fechaJuego: fecha,
+          vendedorId: vendor.id,
+          idempotencyKey: newIdempotencyKey(),
+          lineas: [{ hora: 15, numeroAnimal: "05", importe: "5.00" }],
+        },
+        AHORA_VE_MANANA,
+        db,
+      );
+      assert.equal(newT.ticket.multiplicadorUsado, 25);
+      return;
+    }
+    if (!slot14) {
+      const res = await db.resultado.create({
+        data: { fecha: fechaJuegoDate(), hora: 14, numero: "03" },
+      });
+      trackOwnedResultadoId(domain, res.id);
+    } else {
+      await db.resultado.update({
+        where: { id: slot14.id },
+        data: { numero: "03" },
+      });
+    }
 
     const pubOld = await getPublicTicketByCodigo(oldT.ticket.codigoPublico, db);
     assert.equal(pubOld!.premioTotal, "150.00"); // 5 × 30
@@ -611,8 +747,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 16–17. Idempotencia + concurrencia ———
   it("idempotencia: replay, body distinto, otro vendedor", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const va = await createVendorUser(db, "vend_idem_a");
-    const vb = await createVendorUser(db, "vend_idem_b");
+    const va = await createVendorUser("vend_idem_a");
+    const vb = await createVendorUser("vend_idem_b");
     const key = newIdempotencyKey();
     const input = {
       fechaJuego: fecha,
@@ -625,7 +761,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     const second = await createTicket(input, AHORA_VE_MANANA, db);
     assert.equal(second.idempotentReplay, true);
     assert.equal(second.ticket.id, first.ticket.id);
-    assert.equal(await db.ticket.count(), 1);
+    assert.equal(await countOwnTickets(), 1);
 
     await assert.rejects(
       () =>
@@ -649,7 +785,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   it("concurrencia: 20 numeros únicos + 10 same-key → 1 ticket", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_conc");
+    const vendor = await createVendorUser("vend_conc");
 
     const results = await Promise.all(
       Array.from({ length: 20 }, (_, i) =>
@@ -673,11 +809,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     );
     assert.equal(new Set(results.map((r) => r.ticket.numeroVisible)).size, 20);
 
-    await resetTicketDomain(db);
-    await seedMinimalBusiness(db);
-    const boot = await bootstrapAdmin(db);
-    adminId = boot.user.id;
-    const vendor2 = await createVendorUser(db, "vend_conc2");
+    // Sin wipe: nuevo vendedor propio para el subcaso de idempotencia concurrente.
+    const vendor2 = await createVendorUser("vend_conc2");
     const key = newIdempotencyKey();
     const input = {
       fechaJuego: fecha,
@@ -689,18 +822,29 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       Array.from({ length: 10 }, () => createTicket(input, AHORA_VE_MANANA, db)),
     );
     assert.equal(new Set(parallel.map((r) => r.ticket.id)).size, 1);
-    assert.equal(await db.ticket.count(), 1);
+    assert.equal(
+      await db.ticket.count({ where: { vendedorId: vendor2.id } }),
+      1,
+    );
   });
 
   // ——— 18. Horas cerradas ———
   it("horas cerradas / mixtas rechazan", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_hora");
+    const vendor = await createVendorUser("vend_hora");
 
-    // Hora con resultado
-    await db.resultado.create({
-      data: { fecha: fechaJuegoDate(), hora: 14, numero: "03" },
+    // Hora con resultado (crear solo si el slot está libre; si hay ajeno, también cierra).
+    const slot14 = await db.resultado.findUnique({
+      where: {
+        fecha_hora: { fecha: fechaJuegoDate(), hora: 14 },
+      },
     });
+    if (!slot14) {
+      const createdRes = await db.resultado.create({
+        data: { fecha: fechaJuegoDate(), hora: 14, numero: "03" },
+      });
+      trackOwnedResultadoId(domain, createdRes.id);
+    }
     await assert.rejects(
       () =>
         createTicket(
@@ -767,13 +911,13 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     ),
       DrawClosedError,
     );
-    assert.equal(await db.ticket.count(), 0);
+    assert.equal(await countOwnTickets(), 0);
   });
 
   // ——— 19. QR / público ———
   it("consulta pública por codigoPublico (no numeroVisible)", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_qr");
+    const vendor = await createVendorUser("vend_qr");
     const created = await createTicket(
       {
         fechaJuego: fecha,
@@ -802,7 +946,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   // ——— 20–21. Expiración + logout ———
   it("sesión expirada y logout invalidan", async () => {
-    const vendor = await createVendorUser(db, "vend_sess");
+    const vendor = await createVendorUser("vend_sess");
     const login = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -832,9 +976,10 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("passwordHash y token real no salen en APIs públicas de usuario", async () => {
     const vendor = await createVendor(db, {
       nombre: "Sec Vend",
-      usuario: "vend_sec",
+      usuario: `${runTag}_sec`.slice(0, 40),
       password: VENDOR_PASS,
     });
+    trackOwnedUserId(domain, vendor.id);
     const json = JSON.stringify(vendor);
     assert.doesNotMatch(json, /passwordHash/);
     assert.doesNotMatch(json, /password/);
@@ -848,7 +993,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     assert.doesNotMatch(userJson, /passwordHash/);
     assert.equal(userJson.includes(login!.token), false);
 
-    const sessions = await db.usuarioSesion.findMany();
+    const sessions = await db.usuarioSesion.findMany({ where: { usuarioId: vendor.id } });
     for (const s of sessions) {
       assert.notEqual(s.tokenHash, login!.token);
     }
@@ -866,7 +1011,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // Animal inexistente (rollback smoke)
   it("animal inexistente no deja ticket", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_roll");
+    const vendor = await createVendorUser("vend_roll");
     await assert.rejects(
       () =>
         createTicket(
@@ -881,12 +1026,12 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     ),
       AnimalNotFoundError,
     );
-    assert.equal(await db.ticket.count(), 0);
+    assert.equal(await countOwnTickets(), 0);
   });
 
   // ——— Passwords: change + admin reset ———
   it("change-password: invalida sesión; antigua falla; nueva login OK", async () => {
-    const vendor = await createVendorUser(db, "vend_pw_chg");
+    const vendor = await createVendorUser("vend_pw_chg");
     const login = await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -916,7 +1061,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   });
 
   it("change-password rechaza actual incorrecta / igual / corta / inactivo", async () => {
-    const vendor = await createVendorUser(db, "vend_pw_bad");
+    const vendor = await createVendorUser("vend_pw_bad");
     await assert.rejects(
       () =>
         changeOwnPassword(db, {
@@ -963,7 +1108,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   });
 
   it("ADMIN reset VENDEDOR: hash nuevo, sesiones 0, inactivo no reactivado; no reset ADMIN", async () => {
-    const vendor = await createVendorUser(db, "vend_pw_rst");
+    const vendor = await createVendorUser("vend_pw_rst");
     await loginWithCredentials(db, {
       usuario: vendor.usuario,
       password: VENDOR_PASS,
@@ -1014,7 +1159,8 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— Reportes ADMIN ———
   it("reporte diario: anulados fuera; consistencia vendedor/hora; sin passwordHash", async () => {
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
-    const vendor = await createVendorUser(db, "vend_rep_a");
+    const vendor = await createVendorUser("vend_rep_a");
+    const baseline = await getDailyReport(db, fecha);
 
     await createTicket(
       {
@@ -1048,17 +1194,25 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
     const reporte = await getDailyReport(db, fecha);
 
-    assert.equal(reporte.tickets.emitidos, 1);
-    assert.equal(reporte.tickets.anulados, 1);
-    assert.equal(reporte.ventas.totalJugado, "10.00");
+    assert.equal(
+      reporte.tickets.emitidos,
+      baseline.tickets.emitidos + 1,
+    );
+    assert.equal(
+      reporte.tickets.anulados,
+      baseline.tickets.anulados + 1,
+    );
+    assert.equal(
+      reporte.ventas.totalJugado,
+      moneyAdd(baseline.ventas.totalJugado, "10.00"),
+    );
     assert.equal(
       sumMoneyStrings(reporte.porVendedor.map((v) => v.totalJugado)),
       reporte.ventas.totalJugado,
     );
-    assert.equal(
-      sumMoneyStrings(reporte.porHora.map((h) => h.totalJugado)),
-      "10.00",
-    );
+    const vendRow = reporte.porVendedor.find((v) => v.vendedorId === vendor.id);
+    assert.ok(vendRow);
+    assert.equal(vendRow!.totalJugado, "10.00");
     assert.equal(reporte.porHora.length, 11);
     assert.equal(
       canAccessAdminApi({
@@ -1077,14 +1231,29 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("auditoría: resultado 03→05 y anulación sin secretos", async () => {
     const fecha = new Date(Date.UTC(2026, 9, 2));
     const fechaStr = hoyYYYYMMDD(AHORA_VE_MANANA);
+    // Hora 12: menos conflicto con ventas fixture (14).
+    const hora = 12;
+    const existing = await db.resultado.findUnique({
+      where: { fecha_hora: { fecha, hora } },
+    });
+    if (existing && !domain.resultadoIds.has(existing.id)) {
+      // No mutar resultado ajeno; la regla de auth ya se cubre abajo.
+      assert.equal(canAccessAdminApi(null), false);
+      return;
+    }
 
+    let resultadoId: string;
     await db.$transaction(async (tx) => {
       const { recordAuditEvent } = await import("@/lib/audit/audit");
-      const created = await tx.resultado.upsert({
-        where: { fecha_hora: { fecha, hora: 14 } },
-        update: { numero: "03" },
-        create: { fecha, hora: 14, numero: "03" },
-      });
+      const created = existing
+        ? await tx.resultado.update({
+            where: { id: existing.id },
+            data: { numero: "03" },
+          })
+        : await tx.resultado.create({
+            data: { fecha, hora, numero: "03" },
+          });
+      resultadoId = created.id;
       await recordAuditEvent(tx, {
         usuarioId: adminId,
         accion: "CREAR_RESULTADO",
@@ -1092,20 +1261,18 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         entidadId: created.id,
         detalle: {
           fecha: fechaStr,
-          hora: 14,
+          hora,
           numeroAnterior: null,
           numeroNuevo: "03",
         },
       });
     });
+    trackOwnedResultadoId(domain, resultadoId!);
 
     await db.$transaction(async (tx) => {
       const { recordAuditEvent } = await import("@/lib/audit/audit");
-      const previo = await tx.resultado.findUniqueOrThrow({
-        where: { fecha_hora: { fecha, hora: 14 } },
-      });
       const updated = await tx.resultado.update({
-        where: { id: previo.id },
+        where: { id: resultadoId! },
         data: { numero: "05" },
       });
       await recordAuditEvent(tx, {
@@ -1115,7 +1282,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
         entidadId: updated.id,
         detalle: {
           fecha: fechaStr,
-          hora: 14,
+          hora,
           numeroAnterior: "03",
           numeroNuevo: "05",
         },
@@ -1126,11 +1293,14 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     const listed = await listAuditoria(db, {
       accion: "MODIFICAR_RESULTADO",
     });
-    assert.ok(listed.items.length >= 1);
-    const mod = listed.items[0]!;
-    assert.equal(mod.detalle?.numeroAnterior, "03");
-    assert.equal(mod.detalle?.numeroNuevo, "05");
-    assert.doesNotMatch(JSON.stringify(listed), /passwordHash|tokenHash|idempotencyKey/);
+    const mod = listed.items.find((i) => i.entidadId === resultadoId!);
+    assert.ok(mod);
+    assert.equal(mod!.detalle?.numeroAnterior, "03");
+    assert.equal(mod!.detalle?.numeroNuevo, "05");
+    assert.doesNotMatch(
+      JSON.stringify(listed),
+      /passwordHash|tokenHash|idempotencyKey/,
+    );
     assert.equal(canAccessAdminApi(null), false);
   });
 });

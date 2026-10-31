@@ -216,8 +216,9 @@ async function main() {
   }
 
   console.log(`→ ejecutando suite de integración (${testFiles.length} archivo(s))…`);
-  // Un proceso por archivo, en serie: evita que beforeEach/resetTicketDomain
-  // de una suite borre usuarios mientras otra crea tickets en paralelo.
+  // OBLIGATORIO: un proceso por archivo, en serie (nunca `tsx --test a b` juntos).
+  // Evita carreras entre cleanups owned / registries y propaga el primer fallo
+  // con process.exit(status) sin continuar el resto.
   for (const file of testFiles) {
     console.log(`→ ${path.relative(ROOT, file)}`);
     const testStatus = run(
@@ -225,6 +226,9 @@ async function main() {
       testEnv,
     );
     if (testStatus !== 0) {
+      console.error(
+        `→ ABORT integración: ${path.relative(ROOT, file)} exit=${testStatus}`,
+      );
       process.exit(testStatus);
     }
   }
