@@ -14,12 +14,25 @@ import {
   ADMIN_TICKETS_PAGE_SIZE_MAX,
   MOTIVO_ANULACION_MAX,
 } from "@/lib/tickets/admin-ticket-constants";
+import {
+  ADMIN_TICKET_SORT_KEYS,
+  type AdminTicketSortKey,
+} from "@/lib/tickets/admin-ticket-sort";
+import { parseTableSortState } from "@/lib/ui/table-sort-query";
+import type { TableSortState } from "@/lib/ui/table-sort";
 
 export {
   ADMIN_TICKETS_PAGE_SIZE_DEFAULT,
   ADMIN_TICKETS_PAGE_SIZE_MAX,
   MOTIVO_ANULACION_MAX,
 } from "@/lib/tickets/admin-ticket-constants";
+
+export {
+  ADMIN_TICKET_SORT_KEYS,
+  buildAdminTicketOrderBy,
+  ADMIN_TICKET_ORDER_BY_DEFAULT,
+} from "@/lib/tickets/admin-ticket-sort";
+export type { AdminTicketSortKey } from "@/lib/tickets/admin-ticket-sort";
 
 export type AdminTicketEstadoFiltro = "EMITIDO" | "ANULADO" | "TODOS";
 
@@ -30,6 +43,10 @@ export type AdminListTicketsQuery = {
   numero?: string | null;
   page?: string | number | null;
   pageSize?: string | number | null;
+  /** Columna de ordenación (lista blanca). */
+  sort?: string | null;
+  /** Dirección asc|desc. */
+  dir?: string | null;
 };
 
 export type AdminListTicketsFilters = {
@@ -39,6 +56,8 @@ export type AdminListTicketsFilters = {
   numeroVisible: string | null;
   page: number;
   pageSize: number;
+  /** null/null = orden predeterminado del listado. */
+  sort: TableSortState<AdminTicketSortKey>;
 };
 
 function parsePositiveInt(
@@ -101,6 +120,12 @@ export function parseAdminListTicketsQuery(
     pageSize = ADMIN_TICKETS_PAGE_SIZE_MAX;
   }
 
+  const sort = parseTableSortState<AdminTicketSortKey>(
+    query.sort,
+    query.dir,
+    ADMIN_TICKET_SORT_KEYS,
+  );
+
   return {
     fechaJuego,
     fechaJuegoStr,
@@ -108,6 +133,7 @@ export function parseAdminListTicketsQuery(
     numeroVisible,
     page,
     pageSize,
+    sort,
   };
 }
 
