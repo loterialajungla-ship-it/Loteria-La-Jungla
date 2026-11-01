@@ -36,6 +36,8 @@ export async function GET(request: Request) {
         numero: searchParams.get("numero") ?? searchParams.get("numeroVisible"),
         page: searchParams.get("page"),
         pageSize: searchParams.get("pageSize"),
+        sort: searchParams.get("sort"),
+        dir: searchParams.get("dir"),
       },
     );
 

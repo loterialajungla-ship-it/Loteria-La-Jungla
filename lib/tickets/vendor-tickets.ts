@@ -2,6 +2,7 @@ import type { PrismaClient, EstadoTicket, RolUsuario } from "@prisma/client";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { parseAdminListTicketsQuery } from "@/lib/tickets/admin-ticket-query";
 import { TicketNotFoundError } from "@/lib/tickets/errors";
+import { buildVendorTicketOrderBy } from "@/lib/tickets/vendor-ticket-sort";
 import {
   calcularPremioTotalPublico,
   derivarEstadoTicketPublico,
@@ -68,9 +69,16 @@ export async function listVendorTickets(
     numero?: string | null;
     page?: string | number | null;
     pageSize?: string | number | null;
+    sort?: string | null;
+    dir?: string | null;
   },
 ): Promise<ListVendorTicketsResult> {
+  // Filtros/paginación/sort: parser admin compartido.
+  // Dependencia documentada: ADMIN_TICKET_SORT_KEYS ≡ VENDOR_TICKET_SORT_KEYS
+  // (contrato en vendor-ticket-sort.test.ts). orderBy tipado vendor aparte.
+  // Ignora vendedorId del cliente: el alcance lo fija actor abajo.
   const filters = parseAdminListTicketsQuery(query);
+  const orderBy = buildVendorTicketOrderBy(filters.sort);
 
   const where = {
     ...(actor.rol === "VENDEDOR" ? { vendedorId: actor.userId } : {}),
@@ -87,7 +95,7 @@ export async function listVendorTickets(
     db.ticket.count({ where }),
     db.ticket.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy,
       skip,
       take: filters.pageSize,
       include: {
