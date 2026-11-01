@@ -144,6 +144,7 @@ describe("unit-test-file-list", () => {
     assert.ok(dirs.includes("lib/db"));
     assert.ok(dirs.includes("lib/resultados"));
     assert.ok(dirs.includes("lib/creditos"));
+    assert.ok(dirs.includes("lib/ui"));
     assert.ok(dirs.includes("lib/dev"));
     assert.ok(dirs.includes("app/admin"));
     assert.ok(!dirs.some((d) => d.startsWith("lib/acceptance")));

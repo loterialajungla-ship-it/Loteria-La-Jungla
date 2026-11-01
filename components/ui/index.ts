@@ -16,8 +16,12 @@ export {
   DataTableRow,
   DataTableTd,
   DataTableTh,
+  SortableDataTableTh,
 } from "@/components/ui/DataTable";
-export type { DataTableProps } from "@/components/ui/DataTable";
+export type {
+  DataTableProps,
+  SortableDataTableThProps,
+} from "@/components/ui/DataTable";
 export { EmptyState } from "@/components/ui/EmptyState";
 export type { EmptyStateProps } from "@/components/ui/EmptyState";
 export { ErrorState } from "@/components/ui/ErrorState";
