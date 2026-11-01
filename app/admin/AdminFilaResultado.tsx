@@ -16,7 +16,14 @@ import {
   type ResultadoActual,
 } from "@/app/admin/admin-resultados-ui";
 import { MOTIVO_CORRECCION_MAX } from "@/lib/resultados/correction-constants";
-import { Alert, Button, Card, Select, StatusBadge } from "@/components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  Select,
+  StatusBadge,
+  Textarea,
+} from "@/components/ui";
 import { cn } from "@/components/ui/cn";
 
 type Props = {
@@ -426,22 +433,22 @@ export function AdminFilaResultado({
             Obligatorio. Quedará en la auditoría con el valor anterior y el
             nuevo.
           </p>
-          <label className="mt-3 block text-sm font-medium text-ink">
-            Motivo
-            <textarea
-              value={motivo}
-              maxLength={MOTIVO_CORRECCION_MAX}
-              disabled={estado === "guardando"}
-              onChange={(e) => {
-                setMotivo(e.target.value);
-                setEstado("idle");
-                setMensaje("");
-              }}
-              rows={3}
-              className="mt-1 w-full rounded-lj-md border border-border-strong bg-surface px-3 py-2 text-base outline-none focus-visible:border-danger-700 focus-visible:ring-2 focus-visible:ring-danger-100"
-              placeholder="Describe el motivo…"
-            />
-          </label>
+          <Textarea
+            name="motivo-correccion"
+            label="Motivo"
+            variant="danger"
+            value={motivo}
+            maxLength={MOTIVO_CORRECCION_MAX}
+            disabled={estado === "guardando"}
+            onChange={(e) => {
+              setMotivo(e.target.value);
+              setEstado("idle");
+              setMensaje("");
+            }}
+            rows={3}
+            placeholder="Describe el motivo…"
+            containerClassName="mt-3"
+          />
           <p className="mt-1 text-right text-xs text-ink-muted">
             {motivo.trim().length}/{MOTIVO_CORRECCION_MAX}
           </p>

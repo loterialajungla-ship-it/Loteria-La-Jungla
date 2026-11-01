@@ -219,7 +219,7 @@ export function CorregirCreditosForm({
           </p>
         ) : null}
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div className="mt-3 grid gap-3 [&>*]:min-w-0 sm:grid-cols-[repeat(3,minmax(0,1fr))]">
           <Input
             name="importeCorreccion"
             label="Importe del ajuste"

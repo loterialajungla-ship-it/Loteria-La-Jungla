@@ -43,15 +43,15 @@ export function NavegacionFecha({
         )}
       </div>
 
-      <form method="get" action="/" className="mt-3">
-        <label className="flex flex-col gap-2 text-sm font-medium text-emerald-300">
+      <form method="get" action="/" className="mt-3 w-full min-w-0">
+        <label className="flex w-full min-w-0 flex-col gap-2 text-sm font-medium text-emerald-300">
           Ir a una fecha
           <input
             type="date"
             name="fecha"
             defaultValue={fechaStr}
             max={maxFecha}
-            className="min-h-12 rounded-lj-md border border-emerald-700 bg-emerald-950/70 px-3 py-3 text-base text-emerald-50 outline-none focus-visible:border-amber-400 focus-visible:ring-2 focus-visible:ring-amber-400/30"
+            className="box-border min-h-12 w-full min-w-0 max-w-full rounded-lj-md border border-emerald-700 bg-emerald-950/70 px-3 py-3 text-base text-emerald-50 outline-none focus-visible:border-amber-400 focus-visible:ring-2 focus-visible:ring-amber-400/30"
           />
         </label>
         <button

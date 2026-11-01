@@ -147,7 +147,7 @@ export function RetirarCreditosForm({
           Saldo actual:{" "}
           <strong className="font-mono text-ink">{saldoDisponible}</strong>
         </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid gap-3 [&>*]:min-w-0 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
           <Input
             name="importeRetirar"
             label="Importe"

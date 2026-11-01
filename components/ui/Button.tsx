@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes } from "react";
+import React, { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/components/ui/cn";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
@@ -22,7 +22,8 @@ const variantClasses: Record<ButtonVariant, string> = {
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: "min-h-10 px-3 py-2 text-sm",
+  // sm: 44px táctil; tipografía/padding más compactos que md.
+  sm: "min-h-11 px-3 py-2 text-sm",
   md: "min-h-11 px-4 py-2.5 text-base",
   lg: "min-h-12 px-4 py-3 text-base",
 };

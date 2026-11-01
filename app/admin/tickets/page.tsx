@@ -121,7 +121,10 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
       />
 
       <Card className="mt-6">
-        <form method="get" className="grid gap-3 sm:grid-cols-2">
+        <form
+          method="get"
+          className="grid gap-3 [&>*]:min-w-0 sm:grid-cols-[repeat(2,minmax(0,1fr))]"
+        >
           <Input
             type="date"
             name="fecha"
@@ -219,7 +222,7 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
                     </dl>
                     <Link
                       href={`/admin/tickets/${t.id}`}
-                      className="mt-3 inline-flex min-h-10 items-center text-sm font-semibold text-brand-800 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                      className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand-800 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                     >
                       Ver detalle
                     </Link>
@@ -271,7 +274,7 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
                       <DataTableTd>
                         <Link
                           href={`/admin/tickets/${t.id}`}
-                          className="font-semibold text-brand-800 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                          className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                         >
                           Ver
                         </Link>

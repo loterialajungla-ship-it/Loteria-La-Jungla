@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { cn } from "@/components/ui/cn";
 import { etiquetaHora } from "@/components/tickets/pos-state";
 
@@ -84,7 +85,7 @@ export function PosHourTabs({
               }
               onClick={() => onSelectHora(h.hora)}
               className={cn(
-                "relative shrink-0 rounded-lj-md px-3 py-2.5 text-left transition-colors",
+                "relative min-h-11 shrink-0 rounded-lj-md px-3 py-2.5 text-left transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2",
                 cerrada &&
                   "cursor-not-allowed border border-border bg-surface-muted text-ink-muted",

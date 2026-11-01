@@ -1,4 +1,7 @@
-import type { ReactNode, SelectHTMLAttributes } from "react";
+import React, {
+  type ReactNode,
+  type SelectHTMLAttributes,
+} from "react";
 import { cn } from "@/components/ui/cn";
 
 export type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
@@ -26,7 +29,13 @@ export function Select({
   const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className={cn("flex flex-col gap-2", containerClassName)}>
+    <div
+      className={cn(
+        // min-w-0: permite encoger en flex/grid sin desbordar el contenedor.
+        "flex w-full min-w-0 flex-col gap-2",
+        containerClassName,
+      )}
+    >
       {label ? (
         <label
           htmlFor={fieldId}
@@ -45,7 +54,7 @@ export function Select({
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         className={cn(
-          "w-full rounded-lj-md border border-border-strong bg-surface px-4 py-3 text-base text-ink",
+          "box-border w-full min-w-0 max-w-full rounded-lj-md border border-border-strong bg-surface px-4 py-3 text-base text-ink",
           "outline-none transition-colors",
           "focus-visible:border-brand-600 focus-visible:ring-2 focus-visible:ring-brand-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
           "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-60",

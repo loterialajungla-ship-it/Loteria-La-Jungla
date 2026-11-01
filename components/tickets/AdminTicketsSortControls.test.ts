@@ -291,7 +291,7 @@ describe("AdminTicketsMobileSortButtons — a11y (sin roles de tabla)", () => {
     );
     assert.match(html, /aria-sort="descending"/);
     assert.match(html, /↓/);
-    assert.match(html, /min-h-10/);
+    assert.match(html, /min-h-11/);
   });
 });
 

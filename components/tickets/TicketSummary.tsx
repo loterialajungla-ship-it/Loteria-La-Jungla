@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Alert, Button } from "@/components/ui";
 import { cn } from "@/components/ui/cn";
 import {
@@ -16,6 +16,8 @@ import {
 } from "@/components/tickets/pos-state";
 import type { PosApuestas } from "@/components/tickets/pos-state";
 import type { AnimalOpcion } from "@/components/tickets/animal-types";
+import { useVisualViewportBottomMetrics } from "@/lib/ui/use-visual-viewport-bottom";
+import { scrollFocusedControlIntoView } from "@/lib/ui/scroll-focused-control";
 
 type Props = {
   fechaJuego: string;
@@ -110,13 +112,16 @@ function DetalleLineas({
                           disabled={creando}
                           value={importe}
                           aria-invalid={invalido || !ok}
+                          onFocus={(e) => {
+                            scrollFocusedControlIntoView(e.currentTarget);
+                          }}
                           onChange={(e) =>
                             onChange(
                               upsertLinea(apuestas, hora, numero, e.target.value),
                             )
                           }
                           className={cn(
-                            "min-h-10 w-full rounded-lj-sm border border-border-strong bg-surface px-2 py-1.5 font-mono text-base tabular-nums outline-none",
+                            "min-h-11 w-full min-w-0 max-w-full rounded-lj-sm border border-border-strong bg-surface px-2 py-1.5 font-mono text-base tabular-nums outline-none",
                             "focus-visible:border-brand-600 focus-visible:ring-2 focus-visible:ring-brand-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
                             invalido || !ok
                               ? "border-danger-700"
@@ -212,6 +217,8 @@ export function TicketSummary({
   const panelId = useId();
   const expandirRef = useRef<HTMLButtonElement>(null);
   const cerrarRef = useRef<HTMLButtonElement>(null);
+  const { bottomInset, panelMaxHeightPx } =
+    useVisualViewportBottomMetrics(0.48);
   const total = totalOrientativo(apuestas);
   const validas = apuestasALineasApi(apuestas).length;
 
@@ -238,7 +245,7 @@ export function TicketSummary({
       <aside className="hidden lg:block">
         <div className="sticky top-36 rounded-lj-lg border border-border bg-surface p-4 shadow-card">
           <h2 className="text-lg font-bold text-ink">Resumen del ticket</h2>
-          <div className="mt-4 max-h-[min(60vh,28rem)] overflow-y-auto pr-1">
+          <div className="mt-4 max-h-[min(60vh,28rem)] overflow-y-auto overscroll-contain pr-1">
             <DetalleLineas
               fechaJuego={fechaJuego}
               apuestas={apuestas}
@@ -257,7 +264,7 @@ export function TicketSummary({
         </div>
       </aside>
 
-      {/* Móvil / tablet: barra inferior + panel expandible */}
+      {/* Móvil / tablet: barra inferior elevada con visualViewport + safe-area */}
       <div className="lg:hidden">
         {abierto ? (
           <div
@@ -268,10 +275,12 @@ export function TicketSummary({
         ) : null}
 
         <div
+          data-pos-bottom-bar=""
           className={cn(
-            "fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface shadow-card",
-            "pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+            "fixed inset-x-0 z-30 border-t border-border bg-surface shadow-card",
+            "pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
           )}
+          style={{ bottom: bottomInset }}
         >
           <div
             id={panelId}
@@ -280,9 +289,15 @@ export function TicketSummary({
             aria-label="Detalle del ticket"
             hidden={!abierto}
             className={cn(
-              "max-h-[55vh] overflow-y-auto border-b border-border px-4 py-3",
+              "overflow-y-auto overscroll-contain border-b border-border px-4 py-3",
               !abierto && "hidden",
+              panelMaxHeightPx == null && "max-h-[min(55dvh,55vh)]",
             )}
+            style={
+              abierto && panelMaxHeightPx != null
+                ? { maxHeight: panelMaxHeightPx }
+                : undefined
+            }
           >
             <div className="mx-auto flex max-w-lg items-center justify-between gap-2">
               <h2 className="text-base font-bold text-ink">
@@ -313,7 +328,7 @@ export function TicketSummary({
             <button
               ref={expandirRef}
               type="button"
-              className="min-w-0 flex-1 rounded-lj-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+              className="min-h-11 min-w-0 flex-1 rounded-lj-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
               aria-expanded={abierto}
               aria-controls={panelId}
               onClick={() => setAbierto((v) => !v)}
@@ -331,7 +346,7 @@ export function TicketSummary({
               size="md"
               disabled={!puedeCrearTicket(apuestas) || creando}
               onClick={onCrear}
-              className="shrink-0"
+              className="min-h-11 shrink-0"
             >
               {creando ? "Creando…" : "Crear"}
             </Button>

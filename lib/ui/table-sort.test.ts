@@ -166,7 +166,7 @@ describe("DataTableTh / SortableDataTableTh (markup SSR)", () => {
     );
     assert.match(html, /aria-sort="ascending"/);
     assert.match(html, /type="button"/);
-    assert.match(html, /min-h-10/);
+    assert.match(html, /min-h-11/);
     assert.match(html, /focus-visible:ring-2/);
     assert.match(html, /↑/);
     assert.equal(html.includes("↕"), false);

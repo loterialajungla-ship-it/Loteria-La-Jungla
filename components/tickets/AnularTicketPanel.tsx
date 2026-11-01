@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { MOTIVO_ANULACION_MAX } from "@/lib/tickets/admin-ticket-constants";
-import { Alert, Button } from "@/components/ui";
+import { Alert, Button, Textarea } from "@/components/ui";
 
 type Props = {
   ticketId: string;
@@ -157,18 +157,18 @@ export function AnularTicketPanel({
         Ejemplos: Error de digitación · Cliente pidió cancelación · Ticket
         generado incorrectamente
       </p>
-      <label className="mt-3 block text-sm font-medium text-ink">
-        Motivo
-        <textarea
-          value={motivo}
-          maxLength={MOTIVO_ANULACION_MAX}
-          disabled={enviando}
-          onChange={(e) => setMotivo(e.target.value)}
-          rows={3}
-          className="mt-1 w-full rounded-lj-md border border-border-strong bg-surface px-3 py-2 text-base outline-none focus-visible:border-danger-700 focus-visible:ring-2 focus-visible:ring-danger-100"
-          placeholder="Describe el motivo…"
-        />
-      </label>
+      <Textarea
+        name="motivo-anulacion"
+        label="Motivo"
+        variant="danger"
+        value={motivo}
+        maxLength={MOTIVO_ANULACION_MAX}
+        disabled={enviando}
+        onChange={(e) => setMotivo(e.target.value)}
+        rows={3}
+        placeholder="Describe el motivo…"
+        containerClassName="mt-3"
+      />
       <p className="mt-1 text-right text-xs text-ink-muted">
         {motivo.trim().length}/{MOTIVO_ANULACION_MAX}
       </p>
