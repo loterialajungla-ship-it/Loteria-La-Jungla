@@ -6,9 +6,15 @@ import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/prisma";
 import { hoyYYYYMMDD } from "@/lib/fecha";
 import { formatearFechaUi } from "@/components/tickets/pos-state";
+import { VendorTicketsSortBar } from "@/components/tickets/VendorTicketsSortControls";
 import { listVendorTickets } from "@/lib/tickets/vendor-tickets";
+import {
+  VENDOR_TICKET_SORT_KEYS,
+  type VendorTicketSortKey,
+} from "@/lib/tickets/vendor-ticket-sort";
 import { buildQuery } from "@/lib/ui/build-query";
 import { ticketDerivadoBadge } from "@/lib/ui/status-labels";
+import { parseTableSortState } from "@/lib/ui/table-sort-query";
 import {
   Button,
   Card,
@@ -33,6 +39,9 @@ type Props = {
     estado?: string;
     numero?: string;
     page?: string;
+    pageSize?: string;
+    sort?: string;
+    dir?: string;
   };
 };
 
@@ -58,22 +67,52 @@ export default async function VentaTicketsPage({ searchParams }: Props) {
     typeof searchParams.numero === "string" ? searchParams.numero.trim() : "";
   const page =
     typeof searchParams.page === "string" ? searchParams.page.trim() : "1";
+  const pageSize =
+    typeof searchParams.pageSize === "string" && searchParams.pageSize.trim()
+      ? searchParams.pageSize.trim()
+      : undefined;
+  const sortRaw =
+    typeof searchParams.sort === "string" ? searchParams.sort.trim() : "";
+  const dirRaw =
+    typeof searchParams.dir === "string" ? searchParams.dir.trim() : "";
+
+  const query = {
+    fecha,
+    estado: estado || undefined,
+    numero: numero || undefined,
+    page,
+    pageSize,
+    sort: sortRaw || undefined,
+    dir: dirRaw || undefined,
+  };
+  // Whitelist vendor propia (sin cast desde parser admin). Paridad de claves
+  // con ADMIN_TICKET_SORT_KEYS cubierta en vendor-ticket-sort.test.ts.
+  const sortState = parseTableSortState<VendorTicketSortKey>(
+    sortRaw || undefined,
+    dirRaw || undefined,
+    VENDOR_TICKET_SORT_KEYS,
+  );
 
   const result = await listVendorTickets(
     prisma,
     { userId: actor.userId, rol: actor.user.rol },
-    {
-      fecha,
-      estado: estado || undefined,
-      numero: numero || undefined,
-      page,
-    },
+    query,
   );
 
   const baseParams = {
     fecha,
     estado: estado || undefined,
     numero: numero || undefined,
+    pageSize,
+    sort: sortState.key ?? undefined,
+    dir: sortState.dir ?? undefined,
+  };
+
+  const listParams = {
+    fecha,
+    estado: estado || undefined,
+    numero: numero || undefined,
+    pageSize,
   };
 
   return (
@@ -104,10 +143,23 @@ export default async function VentaTicketsPage({ searchParams }: Props) {
             placeholder="LJ-20261002-000125"
             className="font-mono"
           />
+          {pageSize ? (
+            <input type="hidden" name="pageSize" value={pageSize} />
+          ) : null}
+          {sortState.key && sortState.dir ? (
+            <>
+              <input type="hidden" name="sort" value={sortState.key} />
+              <input type="hidden" name="dir" value={sortState.dir} />
+            </>
+          ) : null}
           <Button type="submit" variant="primary" size="md" fullWidth>
             Buscar
           </Button>
         </form>
+      </Card>
+
+      <Card className="mt-4" padding="sm">
+        <VendorTicketsSortBar sort={sortState} listParams={listParams} />
       </Card>
 
       {result.tickets.length === 0 ? (

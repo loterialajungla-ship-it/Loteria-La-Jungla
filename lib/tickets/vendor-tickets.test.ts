@@ -161,8 +161,8 @@ describe("estado / premio derivado en historial", () => {
 
 /**
  * Integración DB / e2e pendiente:
- * - listVendorTickets filtra por vendedorId en PostgreSQL
+ * - listVendorTickets filtra por vendedorId en PostgreSQL (también con sort)
  * - getVendorTicketById 404 para ticket ajeno por id y por numeroVisible
  * - TicketPreview + imagen en /venta/tickets/[id]
- * - navegación filtros/paginación UI
+ * - navegación filtros/paginación/ordenación UI autenticada
  */

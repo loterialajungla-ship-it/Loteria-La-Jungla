@@ -257,12 +257,18 @@ describe("contratos de seguridad / alcance", () => {
     assert.match(src, /searchParams\.get\("dir"\)/);
   });
 
-  it("listVendorTickets no activa orderBy por sort (alcance fuera de fase)", () => {
+  it("listVendorTickets usa orderBy tipado propio (no buildAdminTicketOrderBy)", () => {
     const src = fs.readFileSync(
       path.join(process.cwd(), "lib/tickets/vendor-tickets.ts"),
       "utf8",
     );
-    assert.match(src, /orderBy:\s*\{\s*createdAt:\s*"desc"\s*\}/);
+    assert.match(src, /buildVendorTicketOrderBy/);
     assert.equal(src.includes("buildAdminTicketOrderBy"), false);
+    // Default createdAt DESC + id DESC: ver buildVendorTicketOrderBy en
+    // lib/tickets/vendor-ticket-sort.test.ts (no literal orderBy en fuente).
+    assert.equal(
+      /orderBy:\s*\{\s*createdAt:\s*"desc"\s*\}/.test(src),
+      false,
+    );
   });
 });
