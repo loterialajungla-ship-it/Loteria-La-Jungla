@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { listAdminTickets } from "@/lib/tickets/list-admin-tickets";
+import { parseAdminListTicketsQuery } from "@/lib/tickets/admin-ticket-query";
+import {
+  ADMIN_TICKET_SORT_KEYS,
+  type AdminTicketSortKey,
+} from "@/lib/tickets/admin-ticket-sort";
 import { prisma } from "@/lib/prisma";
 import { hoyYYYYMMDD } from "@/lib/fecha";
 import { formatearFechaUi } from "@/components/tickets/pos-state";
+import { AdminTicketsSortableHead } from "@/components/tickets/AdminTicketsSortControls";
 import { buildQuery } from "@/lib/ui/build-query";
 import {
   ticketDerivadoBadge,
@@ -17,7 +23,6 @@ import {
   DataTableHead,
   DataTableRow,
   DataTableTd,
-  DataTableTh,
   EmptyState,
   Input,
   PageHeader,
@@ -39,7 +44,18 @@ type Props = {
     estado?: string;
     numero?: string;
     page?: string;
+    pageSize?: string;
+    sort?: string;
+    dir?: string;
   };
+};
+
+const SORT_LABELS: Record<AdminTicketSortKey, string> = {
+  numeroVisible: "Número",
+  fechaJuego: "Fecha",
+  createdAt: "Creación",
+  totalApostado: "Total",
+  estado: "Estado",
 };
 
 function formatearHoraCreacion(iso: string): string {
@@ -68,18 +84,41 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
     typeof searchParams.numero === "string" ? searchParams.numero.trim() : "";
   const page =
     typeof searchParams.page === "string" ? searchParams.page.trim() : "1";
+  const pageSize =
+    typeof searchParams.pageSize === "string" && searchParams.pageSize.trim()
+      ? searchParams.pageSize.trim()
+      : undefined;
+  const sortRaw =
+    typeof searchParams.sort === "string" ? searchParams.sort.trim() : "";
+  const dirRaw =
+    typeof searchParams.dir === "string" ? searchParams.dir.trim() : "";
 
-  const result = await listAdminTickets(prisma, {
+  const query = {
     fecha,
     estado: estado || undefined,
     numero: numero || undefined,
     page,
-  });
+    pageSize,
+    sort: sortRaw || undefined,
+    dir: dirRaw || undefined,
+  };
+  const sortState = parseAdminListTicketsQuery(query).sort;
+  const result = await listAdminTickets(prisma, query);
 
   const baseParams = {
     fecha,
     estado: estado || undefined,
     numero: numero || undefined,
+    pageSize,
+    sort: sortState.key ?? undefined,
+    dir: sortState.dir ?? undefined,
+  };
+
+  const listParams = {
+    fecha,
+    estado: estado || undefined,
+    numero: numero || undefined,
+    pageSize,
   };
 
   return (
@@ -112,8 +151,54 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
             containerClassName="sm:col-span-2"
             className="font-mono"
           />
+          {pageSize ? (
+            <input type="hidden" name="pageSize" value={pageSize} />
+          ) : null}
+          {/* Escritorio: sort se controla por cabeceras; se preserva al buscar. */}
+          {sortState.key && sortState.dir ? (
+            <>
+              <input type="hidden" name="sort" value={sortState.key} />
+              <input type="hidden" name="dir" value={sortState.dir} />
+            </>
+          ) : null}
           <Button type="submit" variant="primary" size="md" className="sm:col-span-2">
             Buscar
+          </Button>
+        </form>
+      </Card>
+
+      {/* Móvil: controles de ordenación (sin cabeceras de tabla). */}
+      <Card className="mt-4 md:hidden">
+        <form method="get" className="grid gap-3">
+          <input type="hidden" name="fecha" value={fecha} />
+          {estado ? <input type="hidden" name="estado" value={estado} /> : null}
+          {numero ? <input type="hidden" name="numero" value={numero} /> : null}
+          {pageSize ? (
+            <input type="hidden" name="pageSize" value={pageSize} />
+          ) : null}
+          {/* Sin page → reinicia a 1 */}
+          <Select
+            name="sort"
+            label="Ordenar por"
+            defaultValue={sortState.key ?? ""}
+          >
+            <option value="">Predeterminado (creación ↓)</option>
+            {ADMIN_TICKET_SORT_KEYS.map((key) => (
+              <option key={key} value={key}>
+                {SORT_LABELS[key]}
+              </option>
+            ))}
+          </Select>
+          <Select
+            name="dir"
+            label="Dirección"
+            defaultValue={sortState.dir ?? "asc"}
+          >
+            <option value="asc">Ascendente</option>
+            <option value="desc">Descendente</option>
+          </Select>
+          <Button type="submit" variant="secondary" size="md">
+            Aplicar orden
           </Button>
         </form>
       </Card>
@@ -188,15 +273,10 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
           <div className="mt-6 hidden md:block">
             <DataTable caption="Listado de tickets">
               <DataTableHead>
-                <tr>
-                  <DataTableTh>Número</DataTableTh>
-                  <DataTableTh>Fecha</DataTableTh>
-                  <DataTableTh>Creación</DataTableTh>
-                  <DataTableTh>Total</DataTableTh>
-                  <DataTableTh>Estado</DataTableTh>
-                  <DataTableTh>Resultado</DataTableTh>
-                  <DataTableTh>Acción</DataTableTh>
-                </tr>
+                <AdminTicketsSortableHead
+                  sort={sortState}
+                  listParams={listParams}
+                />
               </DataTableHead>
               <DataTableBody>
                 {result.items.map((t) => {

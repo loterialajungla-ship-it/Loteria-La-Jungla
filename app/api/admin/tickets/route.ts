@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * GET /api/admin/tickets?fecha=&estado=&numero=&page=&pageSize=
+ * GET /api/admin/tickets?fecha=&estado=&numero=&page=&pageSize=&sort=&dir=
  * Solo ADMIN.
  */
 export async function GET(request: Request) {
@@ -27,6 +27,8 @@ export async function GET(request: Request) {
       numero: searchParams.get("numero") ?? searchParams.get("numeroVisible"),
       page: searchParams.get("page"),
       pageSize: searchParams.get("pageSize"),
+      sort: searchParams.get("sort"),
+      dir: searchParams.get("dir"),
     });
 
     return NextResponse.json(

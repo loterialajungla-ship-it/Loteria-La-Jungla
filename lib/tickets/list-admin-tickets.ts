@@ -4,6 +4,7 @@ import {
   parseAdminListTicketsQuery,
   type AdminListTicketsQuery,
 } from "@/lib/tickets/admin-ticket-query";
+import { buildAdminTicketOrderBy } from "@/lib/tickets/admin-ticket-sort";
 import {
   calcularPremioTotalPublico,
   derivarEstadoTicketPublico,
@@ -36,7 +37,8 @@ export type AdminListTicketsResult = {
 };
 
 /**
- * Listado admin paginado. Orden: createdAt DESC.
+ * Listado admin paginado.
+ * Orden: sort/dir (whitelist) o createdAt DESC + id DESC.
  * Estado derivado vía liquidación (no duplicar reglas en UI).
  */
 export async function listAdminTickets(
@@ -44,6 +46,7 @@ export async function listAdminTickets(
   query: AdminListTicketsQuery,
 ): Promise<AdminListTicketsResult> {
   const filters = parseAdminListTicketsQuery(query);
+  const orderBy = buildAdminTicketOrderBy(filters.sort);
 
   const where = {
     ...(filters.fechaJuego ? { fechaJuego: filters.fechaJuego } : {}),
@@ -59,7 +62,7 @@ export async function listAdminTickets(
     db.ticket.count({ where }),
     db.ticket.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy,
       skip,
       take: filters.pageSize,
       include: {
