@@ -1,6 +1,16 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import type { ExposicionSorteo } from "@/lib/tickets/aggregate-exposure";
+import {
+  ariaSortValue,
+  cycleExposureSort,
+  EXPOSURE_SORT_DEFAULT,
+  sortExposureAnimals,
+  type ExposureSortKey,
+  type ExposureSortState,
+} from "@/lib/tickets/exposure-table-sort";
+import { cn } from "@/components/ui/cn";
 
 function formatMoney(value: string): string {
   const n = Number(value);
@@ -17,7 +27,26 @@ type Props = {
   exposicion: ExposicionSorteo;
 };
 
+const COLUMNS: { key: ExposureSortKey; label: string }[] = [
+  { key: "animal", label: "Animal" },
+  { key: "totalApostado", label: "Jugado" },
+  { key: "exposicion", label: "Exposición" },
+  { key: "ticketsAfectados", label: "Tickets" },
+];
+
+function sortIndicator(column: ExposureSortKey, state: ExposureSortState): string {
+  if (state.key !== column || state.dir == null) return "↕";
+  return state.dir === "asc" ? "↑" : "↓";
+}
+
 export function ExposureTable({ exposicion }: Props) {
+  const [sort, setSort] = useState<ExposureSortState>(EXPOSURE_SORT_DEFAULT);
+
+  const rows = useMemo(
+    () => sortExposureAnimals(exposicion.animales, sort),
+    [exposicion.animales, sort],
+  );
+
   return (
     <div className="space-y-4">
       <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -56,14 +85,44 @@ export function ExposureTable({ exposicion }: Props) {
         <table className="min-w-full text-left text-sm">
           <thead className="bg-surface-muted text-ink-secondary">
             <tr>
-              <th className="px-3 py-2 font-semibold">Animal</th>
-              <th className="px-3 py-2 font-semibold">Jugado</th>
-              <th className="px-3 py-2 font-semibold">Exposición</th>
-              <th className="px-3 py-2 font-semibold">Tickets</th>
+              {COLUMNS.map((col) => {
+                const active = sort.key === col.key;
+                return (
+                  <th
+                    key={col.key}
+                    scope="col"
+                    aria-sort={ariaSortValue(col.key, sort)}
+                    className="px-1 py-1 font-semibold sm:px-2"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSort((prev) => cycleExposureSort(prev, col.key))
+                      }
+                      className={cn(
+                        "inline-flex min-h-10 w-full items-center gap-1 rounded-sm px-2 py-2 text-left",
+                        "hover:bg-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600",
+                        active ? "text-brand-900" : "text-ink-secondary",
+                      )}
+                    >
+                      <span>{col.label}</span>
+                      <span
+                        className={cn(
+                          "text-xs tabular-nums",
+                          active ? "text-brand-800" : "text-ink-muted",
+                        )}
+                        aria-hidden
+                      >
+                        {sortIndicator(col.key, sort)}
+                      </span>
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {exposicion.animales.map((animal) => (
+            {rows.map((animal) => (
               <tr
                 key={animal.numeroAnimal}
                 className="border-t border-border odd:bg-surface even:bg-surface-muted/60"
