@@ -2,14 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { listAdminTickets } from "@/lib/tickets/list-admin-tickets";
 import { parseAdminListTicketsQuery } from "@/lib/tickets/admin-ticket-query";
-import {
-  ADMIN_TICKET_SORT_KEYS,
-  type AdminTicketSortKey,
-} from "@/lib/tickets/admin-ticket-sort";
 import { prisma } from "@/lib/prisma";
 import { hoyYYYYMMDD } from "@/lib/fecha";
 import { formatearFechaUi } from "@/components/tickets/pos-state";
-import { AdminTicketsSortableHead } from "@/components/tickets/AdminTicketsSortControls";
+import {
+  AdminTicketsMobileSortBar,
+  AdminTicketsSortableHead,
+} from "@/components/tickets/AdminTicketsSortControls";
 import { buildQuery } from "@/lib/ui/build-query";
 import {
   ticketDerivadoBadge,
@@ -48,14 +47,6 @@ type Props = {
     sort?: string;
     dir?: string;
   };
-};
-
-const SORT_LABELS: Record<AdminTicketSortKey, string> = {
-  numeroVisible: "Número",
-  fechaJuego: "Fecha",
-  createdAt: "Creación",
-  totalApostado: "Total",
-  estado: "Estado",
 };
 
 function formatearHoraCreacion(iso: string): string {
@@ -167,40 +158,9 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
         </form>
       </Card>
 
-      {/* Móvil: controles de ordenación (sin cabeceras de tabla). */}
-      <Card className="mt-4 md:hidden">
-        <form method="get" className="grid gap-3">
-          <input type="hidden" name="fecha" value={fecha} />
-          {estado ? <input type="hidden" name="estado" value={estado} /> : null}
-          {numero ? <input type="hidden" name="numero" value={numero} /> : null}
-          {pageSize ? (
-            <input type="hidden" name="pageSize" value={pageSize} />
-          ) : null}
-          {/* Sin page → reinicia a 1 */}
-          <Select
-            name="sort"
-            label="Ordenar por"
-            defaultValue={sortState.key ?? ""}
-          >
-            <option value="">Predeterminado (creación ↓)</option>
-            {ADMIN_TICKET_SORT_KEYS.map((key) => (
-              <option key={key} value={key}>
-                {SORT_LABELS[key]}
-              </option>
-            ))}
-          </Select>
-          <Select
-            name="dir"
-            label="Dirección"
-            defaultValue={sortState.dir ?? "asc"}
-          >
-            <option value="asc">Ascendente</option>
-            <option value="desc">Descendente</option>
-          </Select>
-          <Button type="submit" variant="secondary" size="md">
-            Aplicar orden
-          </Button>
-        </form>
+      {/* Móvil: botones táctiles (mismo ciclo/URL que cabeceras de escritorio). */}
+      <Card className="mt-4 md:hidden" padding="sm">
+        <AdminTicketsMobileSortBar sort={sortState} listParams={listParams} />
       </Card>
 
       {result.items.length === 0 ? (
