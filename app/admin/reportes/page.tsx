@@ -42,15 +42,23 @@ export default async function AdminReportesPage({ searchParams }: Props) {
       />
 
       <Card className="mt-6">
-        <form method="get" className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <form
+          method="get"
+          className="flex flex-col gap-3 sm:flex-row sm:items-end [&>*]:min-w-0"
+        >
           <Input
             type="date"
             name="fecha"
             label="Fecha"
             defaultValue={fechaStr}
-            containerClassName="flex-1"
+            containerClassName="min-w-0 flex-1"
           />
-          <Button type="submit" variant="primary" size="md" className="sm:w-auto">
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            className="w-full shrink-0 sm:w-auto"
+          >
             Ver reporte
           </Button>
         </form>
@@ -58,7 +66,7 @@ export default async function AdminReportesPage({ searchParams }: Props) {
 
       <section className="mt-8">
         <h2 className="text-lg font-bold text-ink">Resumen</h2>
-        <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <dl className="mt-3 grid grid-cols-2 gap-3 [&>*]:min-w-0 sm:grid-cols-3">
           <Card padding="sm">
             <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">
               Tickets emitidos
@@ -75,11 +83,11 @@ export default async function AdminReportesPage({ searchParams }: Props) {
               {reporte.tickets.anulados}
             </dd>
           </Card>
-          <Card padding="sm" className="col-span-2 sm:col-span-1">
+          <Card padding="sm" className="col-span-2 min-w-0 sm:col-span-1">
             <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">
               Total jugado
             </dt>
-            <dd className="mt-1 text-2xl font-bold tabular-nums text-brand-900">
+            <dd className="mt-1 break-words text-2xl font-bold tabular-nums text-brand-900">
               {money(reporte.ventas.totalJugado)}
             </dd>
           </Card>
@@ -121,8 +129,8 @@ export default async function AdminReportesPage({ searchParams }: Props) {
             title="Sin ventas emitidas en esta fecha."
           />
         ) : (
-          <div className="mt-3 overflow-x-auto rounded-lj-lg border border-border bg-surface">
-            <table className="min-w-full text-left text-sm">
+          <div className="mt-3 max-w-full overflow-x-auto rounded-lj-lg border border-border bg-surface">
+            <table className="w-full min-w-[20rem] text-left text-sm">
               <thead className="border-b border-border bg-surface-muted text-xs uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-3 py-3 font-semibold">Vendedor</th>
@@ -135,10 +143,10 @@ export default async function AdminReportesPage({ searchParams }: Props) {
               <tbody className="divide-y divide-border">
                 {reporte.porVendedor.map((v) => (
                   <tr key={v.vendedorId ?? "null"}>
-                    <td className="px-3 py-3">
+                    <td className="min-w-0 px-3 py-3">
                       <span className="font-medium text-ink">{v.nombre}</span>
                       {v.usuario ? (
-                        <span className="ml-2 font-mono text-xs text-ink-muted">
+                        <span className="ml-2 break-all font-mono text-xs text-ink-muted">
                           {v.usuario}
                         </span>
                       ) : null}
@@ -163,8 +171,8 @@ export default async function AdminReportesPage({ searchParams }: Props) {
           Suma de líneas emitidas por sorteo (un ticket puede aportar a varias
           horas).
         </p>
-        <div className="mt-3 overflow-x-auto rounded-lj-lg border border-border bg-surface">
-          <table className="min-w-full text-left text-sm">
+        <div className="mt-3 max-w-full overflow-x-auto rounded-lj-lg border border-border bg-surface">
+          <table className="w-full min-w-[16rem] text-left text-sm">
             <thead className="border-b border-border bg-surface-muted text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-3 font-semibold">Hora</th>
@@ -194,8 +202,8 @@ export default async function AdminReportesPage({ searchParams }: Props) {
         <p className="mt-1 text-sm text-ink-muted">
           Catálogo completo en orden. Incluye ceros para comparar fechas.
         </p>
-        <div className="mt-3 max-h-96 overflow-x-auto overflow-y-auto rounded-lj-lg border border-border bg-surface">
-          <table className="min-w-full text-left text-sm">
+        <div className="mt-3 max-h-96 max-w-full overflow-x-auto overflow-y-auto rounded-lj-lg border border-border bg-surface">
+          <table className="w-full min-w-[18rem] text-left text-sm">
             <thead className="sticky top-0 border-b border-border bg-surface-muted text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-3 font-semibold">Animal</th>
@@ -207,7 +215,7 @@ export default async function AdminReportesPage({ searchParams }: Props) {
             <tbody className="divide-y divide-border">
               {reporte.porAnimal.map((a) => (
                 <tr key={a.numeroAnimal}>
-                  <td className="px-3 py-2">
+                  <td className="min-w-0 px-3 py-2">
                     <span className="font-mono text-xs text-ink-muted">
                       {a.numeroAnimal}
                     </span>{" "}
@@ -229,19 +237,23 @@ export default async function AdminReportesPage({ searchParams }: Props) {
           Usa el multiplicador de cada ticket. La exposición total teórica no es
           un pago comprometido; la mayor exposición es el peor caso por hora.
         </p>
-        <div className="mt-3 overflow-x-auto rounded-lj-lg border border-border bg-surface">
-          <table className="min-w-full text-left text-sm">
+        <div className="mt-3 max-w-full overflow-x-auto rounded-lj-lg border border-border bg-surface">
+          <table className="w-full min-w-[36rem] text-left text-sm">
             <thead className="border-b border-border bg-surface-muted text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-3 py-3 font-semibold">Hora</th>
-                <th className="px-3 py-3 font-semibold text-right">Jugado</th>
-                <th className="px-3 py-3 font-semibold text-right">
+                <th className="whitespace-nowrap px-3 py-3 font-semibold text-right">
+                  Jugado
+                </th>
+                <th className="whitespace-nowrap px-3 py-3 font-semibold text-right">
                   Exp. teórica
                 </th>
-                <th className="px-3 py-3 font-semibold text-right">
+                <th className="whitespace-nowrap px-3 py-3 font-semibold text-right">
                   Mayor exp.
                 </th>
-                <th className="px-3 py-3 font-semibold text-right">Tickets</th>
+                <th className="whitespace-nowrap px-3 py-3 font-semibold text-right">
+                  Tickets
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

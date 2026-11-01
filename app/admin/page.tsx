@@ -29,8 +29,9 @@ function ordenAnimal(numero: string): number {
   return Number(numero);
 }
 
+/** Accesos rápidos del admin: objetivo táctil ≥ 44px (min-h-11). */
 const quickLinkClass =
-  "inline-flex min-h-10 items-center rounded-lj-md border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-ink hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2";
+  "inline-flex min-h-11 items-center rounded-lj-md border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-ink hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2";
 
 export default async function AdminPage({ searchParams }: Props) {
   const fechaParam = searchParams.fecha;
@@ -155,20 +156,20 @@ export default async function AdminPage({ searchParams }: Props) {
       <Card className="mt-5">
         <form
           method="get"
-          className="flex flex-col gap-3 sm:flex-row sm:items-end"
+          className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end"
         >
           <Input
             type="date"
             name="fecha"
             label="Fecha de trabajo"
             defaultValue={fechaStr}
-            containerClassName="flex-1"
+            containerClassName="min-w-0 flex-1"
           />
           <Button
             type="submit"
             variant="secondary"
             size="md"
-            className="sm:min-w-[8.5rem]"
+            className="shrink-0 sm:min-w-[8.5rem]"
           >
             Ver fecha
           </Button>

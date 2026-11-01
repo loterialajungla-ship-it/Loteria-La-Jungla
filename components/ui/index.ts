@@ -36,6 +36,8 @@ export { PaginationBar } from "@/components/ui/PaginationBar";
 export type { PaginationBarProps } from "@/components/ui/PaginationBar";
 export { Select } from "@/components/ui/Select";
 export type { SelectProps } from "@/components/ui/Select";
+export { Textarea } from "@/components/ui/Textarea";
+export type { TextareaProps, TextareaVariant } from "@/components/ui/Textarea";
 export { StatusBadge } from "@/components/ui/StatusBadge";
 export type {
   StatusBadgeProps,

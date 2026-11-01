@@ -1,3 +1,4 @@
+import React from "react";
 import Link from "next/link";
 import { cn } from "@/components/ui/cn";
 
@@ -12,7 +13,7 @@ export type PaginationBarProps = {
 };
 
 const btnBase =
-  "inline-flex min-h-10 items-center justify-center rounded-lj-md border px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2";
+  "inline-flex min-h-11 min-w-[2.75rem] items-center justify-center rounded-lj-md border px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2";
 
 export function PaginationBar({
   page,
@@ -29,7 +30,7 @@ export function PaginationBar({
     <nav
       aria-label="Paginación"
       className={cn(
-        "mt-4 flex items-center justify-between gap-3 text-sm",
+        "mt-4 flex flex-wrap items-center justify-between gap-3 text-sm",
         className,
       )}
     >
@@ -55,7 +56,7 @@ export function PaginationBar({
         </span>
       )}
 
-      <p className="text-center text-ink-secondary">
+      <p className="min-w-0 flex-1 text-center text-ink-secondary">
         Página {pageShown} de {totalPages}
         <span className="text-ink-muted">
           {" "}

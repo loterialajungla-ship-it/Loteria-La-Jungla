@@ -27,7 +27,7 @@ export function DataTable({
   return (
     <div
       className={cn(
-        "overflow-x-auto rounded-lj-lg border border-border bg-surface shadow-surface",
+        "max-w-full overflow-x-auto rounded-lj-lg border border-border bg-surface shadow-surface",
         className,
       )}
     >
@@ -101,15 +101,15 @@ export function SortableDataTableTh<K extends string>({
         type="button"
         onClick={() => onSortClick(column)}
         className={cn(
-          "inline-flex min-h-10 w-full items-center gap-1 rounded-sm px-2 py-2 text-left",
-          "hover:bg-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600",
+          "inline-flex min-h-11 w-full items-center gap-1.5 rounded-sm px-2 py-2 text-left",
+          "hover:bg-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-1",
           active ? "text-brand-900" : "text-ink-secondary",
         )}
       >
-        <span>{children}</span>
+        <span className="min-w-0">{children}</span>
         <span
           className={cn(
-            "text-xs tabular-nums",
+            "shrink-0 text-xs tabular-nums",
             active ? "text-brand-800" : "text-ink-muted",
           )}
           aria-hidden

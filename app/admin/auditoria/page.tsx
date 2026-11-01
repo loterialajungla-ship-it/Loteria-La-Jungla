@@ -95,7 +95,7 @@ export default async function AdminAuditoriaPage({ searchParams }: Props) {
       <Card className="mt-6">
         <form
           method="get"
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          className="grid gap-3 [&>*]:min-w-0 sm:grid-cols-[repeat(2,minmax(0,1fr))] lg:grid-cols-[repeat(4,minmax(0,1fr))]"
         >
           <Input
             type="date"
@@ -124,7 +124,7 @@ export default async function AdminAuditoriaPage({ searchParams }: Props) {
             <option value="RESULTADO">RESULTADO</option>
             <option value="AUTH">AUTH</option>
           </Select>
-          <div className="flex items-end">
+          <div className="flex min-w-0 items-end">
             <Button type="submit" variant="secondary" size="md" fullWidth>
               Filtrar
             </Button>

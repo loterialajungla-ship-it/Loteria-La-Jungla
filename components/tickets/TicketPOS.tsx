@@ -263,7 +263,7 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
   }
 
   return (
-    <div className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-8">
+    <div className="pb-[calc(7.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
       <div className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0">
           <PageHeader

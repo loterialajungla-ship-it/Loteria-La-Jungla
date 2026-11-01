@@ -22,7 +22,7 @@ export function AppNavLinks({ variant }: Props) {
       aria-label={variant === "admin" ? "Administración" : "Punto de venta"}
       className="-mx-4 overflow-x-auto overscroll-x-contain px-4 sm:mx-0 sm:overflow-visible sm:px-0"
     >
-      <ul className="flex w-max min-w-full gap-1 pb-0.5 sm:w-full sm:flex-wrap">
+      <ul className="flex w-max min-w-full gap-1.5 pb-0.5 sm:w-full sm:flex-wrap sm:gap-2">
         {items.map((item) => {
           const active = isNavItemActive(pathname, item);
           return (
@@ -31,7 +31,7 @@ export function AppNavLinks({ variant }: Props) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-flex min-h-10 items-center rounded-lj-md px-3 py-2 text-sm font-semibold transition-colors",
+                  "inline-flex min-h-11 min-w-[2.75rem] items-center justify-center rounded-lj-md px-3 py-2 text-sm font-semibold transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2",
                   active
                     ? "bg-brand-800 text-white"

@@ -288,12 +288,15 @@ export function CreditosAdminPanel() {
       )}
 
       <Card>
-        <form method="get" className="flex flex-wrap items-end gap-3">
+        <form
+          method="get"
+          className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end [&>*]:min-w-0"
+        >
           <Select
             name="activo"
             label="Estado cuenta"
             defaultValue={activo}
-            containerClassName="min-w-[9rem]"
+            containerClassName="min-w-0 w-full sm:w-auto sm:min-w-[9rem] sm:flex-1"
           >
             <option value="">Todos</option>
             <option value="activos">Activos</option>
@@ -303,14 +306,19 @@ export function CreditosAdminPanel() {
             name="saldoBajo"
             label="Saldo bajo"
             defaultValue={saldoBajo}
-            containerClassName="min-w-[9rem]"
+            containerClassName="min-w-0 w-full sm:w-auto sm:min-w-[9rem] sm:flex-1"
             disabled={!data.config.umbralSaldoBajo}
           >
             <option value="">Todos</option>
             <option value="true">Solo bajo umbral</option>
             <option value="false">Sin alerta</option>
           </Select>
-          <Button type="submit" variant="secondary" size="md">
+          <Button
+            type="submit"
+            variant="secondary"
+            size="md"
+            className="w-full shrink-0 sm:w-auto"
+          >
             Filtrar
           </Button>
         </form>

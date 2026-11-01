@@ -235,7 +235,7 @@ export function CreditosConfigForm({
           </label>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 [&>*]:min-w-0 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
           <Input
             label="Fecha de inicio (Caracas)"
             type="date"

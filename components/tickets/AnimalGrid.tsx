@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { Input } from "@/components/ui";
 import { normalizarImporteUi } from "@/components/tickets/pos-state";
 import type { AnimalOpcion } from "@/components/tickets/animal-types";
+import { scrollFocusedControlIntoView } from "@/lib/ui/scroll-focused-control";
 
 type Props = {
   animales: AnimalOpcion[];
@@ -131,11 +132,14 @@ export function AnimalGrid({
                         aria-invalid={importeInvalido || (!importeOk && importe.trim() === "")}
                         aria-label={`Importe para ${animal.numero} ${animal.nombre}`}
                         onClick={(e) => e.stopPropagation()}
+                        onFocus={(e) => {
+                          scrollFocusedControlIntoView(e.currentTarget);
+                        }}
                         onChange={(e) =>
                           onImporteChange(animal.numero, e.target.value)
                         }
                         className={cn(
-                          "min-h-10 w-full rounded-lj-sm border bg-surface px-2 py-1.5 font-mono text-base tabular-nums outline-none",
+                          "min-h-11 w-full min-w-0 max-w-full rounded-lj-sm border bg-surface px-2 py-1.5 font-mono text-base tabular-nums outline-none",
                           "focus-visible:border-brand-600 focus-visible:ring-2 focus-visible:ring-brand-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
                           importeInvalido || (!importeOk && importe.trim() === "")
                             ? "border-danger-700"

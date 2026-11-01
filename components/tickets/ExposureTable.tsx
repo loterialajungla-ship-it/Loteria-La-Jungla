@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { ExposicionSorteo } from "@/lib/tickets/aggregate-exposure";
 import {
   ariaSortValue,
@@ -49,26 +49,26 @@ export function ExposureTable({ exposicion }: Props) {
 
   return (
     <div className="space-y-4">
-      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <div className="rounded-lj-md bg-surface-muted p-3">
+      <dl className="grid grid-cols-2 gap-3 text-sm [&>*]:min-w-0 sm:grid-cols-4">
+        <div className="min-w-0 rounded-lj-md bg-surface-muted p-3">
           <dt className="text-ink-muted">Total jugado</dt>
-          <dd className="mt-1 font-bold tabular-nums text-ink">
+          <dd className="mt-1 break-words font-bold tabular-nums text-ink">
             {formatMoney(exposicion.totalApostado)}
           </dd>
         </div>
-        <div className="rounded-lj-md bg-surface-muted p-3">
+        <div className="min-w-0 rounded-lj-md bg-surface-muted p-3">
           <dt className="text-ink-muted">Exposición total</dt>
-          <dd className="mt-1 font-bold tabular-nums text-ink">
+          <dd className="mt-1 break-words font-bold tabular-nums text-ink">
             {formatMoney(exposicion.totalExposicion)}
           </dd>
         </div>
-        <div className="rounded-lj-md bg-accent-50 p-3">
+        <div className="min-w-0 rounded-lj-md bg-accent-50 p-3">
           <dt className="text-accent-800">Mayor exposición</dt>
-          <dd className="mt-1 font-bold tabular-nums text-accent-800">
+          <dd className="mt-1 break-words font-bold tabular-nums text-accent-800">
             {formatMoney(exposicion.mayorExposicion)}
           </dd>
         </div>
-        <div className="rounded-lj-md bg-surface-muted p-3">
+        <div className="min-w-0 rounded-lj-md bg-surface-muted p-3">
           <dt className="text-ink-muted">Tickets afectados</dt>
           <dd className="mt-1 font-bold tabular-nums text-ink">
             {exposicion.ticketsAfectados}
@@ -81,8 +81,8 @@ export function ExposureTable({ exposicion }: Props) {
         exposición = el animal con más riesgo si gana esa hora.
       </p>
 
-      <div className="overflow-x-auto rounded-lj-md border border-border">
-        <table className="min-w-full text-left text-sm">
+      <div className="max-w-full overflow-x-auto rounded-lj-md border border-border">
+        <table className="w-full min-w-[28rem] text-left text-sm">
           <thead className="bg-surface-muted text-ink-secondary">
             <tr>
               {COLUMNS.map((col) => {
@@ -100,8 +100,8 @@ export function ExposureTable({ exposicion }: Props) {
                         setSort((prev) => cycleExposureSort(prev, col.key))
                       }
                       className={cn(
-                        "inline-flex min-h-10 w-full items-center gap-1 rounded-sm px-2 py-2 text-left",
-                        "hover:bg-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600",
+                        "inline-flex min-h-11 w-full items-center gap-1 rounded-sm px-2 py-2 text-left",
+                        "hover:bg-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-1",
                         active ? "text-brand-900" : "text-ink-secondary",
                       )}
                     >
@@ -127,7 +127,7 @@ export function ExposureTable({ exposicion }: Props) {
                 key={animal.numeroAnimal}
                 className="border-t border-border odd:bg-surface even:bg-surface-muted/60"
               >
-                <td className="px-3 py-2 font-medium text-ink">
+                <td className="min-w-0 px-3 py-2 font-medium text-ink">
                   {animal.numeroAnimal} - {animal.nombreAnimal}
                 </td>
                 <td className="px-3 py-2 tabular-nums text-ink">

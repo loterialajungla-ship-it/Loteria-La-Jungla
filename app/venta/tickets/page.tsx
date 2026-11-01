@@ -200,7 +200,7 @@ export default async function VentaTicketsPage({ searchParams }: Props) {
                     </div>
                     <Link
                       href={`/venta/tickets/${t.id}`}
-                      className="inline-flex min-h-10 shrink-0 items-center rounded-lj-md bg-brand-800 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                      className="inline-flex min-h-11 min-w-[2.75rem] shrink-0 items-center justify-center rounded-lj-md bg-brand-800 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                     >
                       Ver
                     </Link>
