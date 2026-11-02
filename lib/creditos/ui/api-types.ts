@@ -10,6 +10,20 @@ export type CreditosConfigPublic = {
   updatedByAdminId: string | null;
 };
 
+/** Config mínima en GET /api/creditos/mi-cuenta (sin metadatos admin). */
+export type MiCuentaConfigPublic = {
+  configPersisted: boolean;
+  controlActivo: boolean;
+  inicioEn: string | null;
+};
+
+export type MiCuentaCuentaPublic = {
+  saldoDisponible: string;
+  tieneCuenta: boolean;
+  saldoBajo: boolean;
+  umbralSaldoBajo: string | null;
+};
+
 export type CreditoResumenItem = {
   vendedorId: string;
   usuario: string;
@@ -48,6 +62,18 @@ export type CreditoMovimientoPublic = {
   actorAdminId: string | null;
   ticketId: string | null;
   movimientoOrigenId: string | null;
+};
+
+export type MiCuentaCreditosResponse = {
+  ok: true;
+  activo: boolean;
+  config: MiCuentaConfigPublic;
+  cuenta: MiCuentaCuentaPublic;
+  movimientos: CreditoMovimientoPublic[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 export type CreditoDetalleResponse = {

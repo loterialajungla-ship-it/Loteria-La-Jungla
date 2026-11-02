@@ -7,6 +7,7 @@ import { PosHourTabs } from "@/components/tickets/PosHourTabs";
 import { TicketImageActions } from "@/components/tickets/TicketImageActions";
 import { TicketPreview } from "@/components/tickets/TicketPreview";
 import type { TicketPreviewData } from "@/components/tickets/TicketPreview";
+import { PosSaldoBadge } from "@/components/creditos/PosSaldoBadge";
 import {
   TicketSummary,
   TicketSummaryHint,
@@ -21,6 +22,7 @@ import {
 } from "@/components/tickets/pos-state";
 import type { PosApuestas } from "@/components/tickets/pos-state";
 import { sanitizeTicketForClientImage } from "@/components/tickets/ticket-image";
+import { useMiCuentaSaldo } from "@/lib/creditos/ui/use-mi-cuenta-saldo";
 
 export type HoraDisponibilidadUi = {
   hora: number;
@@ -81,6 +83,7 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
   const ticketRef = useRef<HTMLElement | null>(null);
   /** Misma key mientras la operación pendiente/reintento; nueva venta = nueva key. */
   const idempotencyKeyRef = useRef<string | null>(null);
+  const { view: saldoView, refresh: refreshSaldo } = useMiCuentaSaldo();
 
   const conteos = useMemo(() => {
     const out: Record<string, number> = {};
@@ -170,6 +173,16 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
           data.error?.message ??
             "Se produjo un conflicto al generar el ticket. Inténtalo nuevamente.",
         );
+        // Incluye INSUFFICIENT_CREDITO_SALDO (U2.2 podrá distinguir el code).
+        // No restar en cliente: refrescar saldo desde el servidor.
+        if (data.error?.code === "INSUFFICIENT_CREDITO_SALDO") {
+          void refreshSaldo();
+        } else if (
+          typeof data.error?.message === "string" &&
+          /saldo|cr[eé]dito/i.test(data.error.message)
+        ) {
+          void refreshSaldo();
+        }
         return;
       }
       if (res.status === 400 && data.error?.code === "DRAW_CLOSED") {
@@ -195,6 +208,7 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
       setTicket(sanitizeTicketForClientImage(data.ticket));
       setModo("exito");
       setApuestas({});
+      void refreshSaldo();
     } catch {
       setError(
         "No se pudo crear el ticket. Puedes reintentar: no se duplicará la venta.",
@@ -211,6 +225,7 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
     setError(null);
     idempotencyKeyRef.current = null;
     void actualizarHoras();
+    void refreshSaldo();
   }
 
   function onSelectHora(hora: number) {
@@ -278,6 +293,11 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
               </>
             }
             description="Solo se vende para hoy (hora Venezuela). Las horas cerradas no son seleccionables; el servidor valida de nuevo al crear."
+          />
+
+          <PosSaldoBadge
+            view={saldoView}
+            onRetry={() => void refreshSaldo()}
           />
 
           <div className="mt-6">
