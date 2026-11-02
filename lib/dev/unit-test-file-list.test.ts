@@ -146,7 +146,23 @@ describe("unit-test-file-list", () => {
     assert.ok(dirs.includes("lib/creditos"));
     assert.ok(dirs.includes("lib/ui"));
     assert.ok(dirs.includes("lib/dev"));
+    assert.ok(dirs.includes("lib/tickets"));
     assert.ok(dirs.includes("app/admin"));
     assert.ok(!dirs.some((d) => d.startsWith("lib/acceptance")));
+    const tickets = UNIT_TEST_ROOTS.find(
+      (r) => r.relativeDir.split(path.sep).join("/") === "lib/tickets",
+    );
+    assert.equal(tickets?.recursive, true);
+  });
+
+  it("inventario real incluye mapper UX de creación de ticket", () => {
+    const listed = listUnitTestFiles(path.resolve(__dirname, "../..")).map(
+      (f) => f.split(path.sep).join("/"),
+    );
+    assert.ok(
+      listed.some((f) =>
+        f.endsWith("lib/tickets/ui/map-create-ticket-error.test.ts"),
+      ),
+    );
   });
 });
