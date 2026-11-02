@@ -23,11 +23,14 @@ import {
   parseConfigPatchBody,
   parseCorregirBody,
 } from "@/lib/creditos/api/parse";
+import { getMiCuentaCreditos } from "@/lib/creditos/api/mi-cuenta";
 import {
   serializeConfig,
   serializeCuentaBasica,
+  serializeMiCuentaConfig,
   serializeMovimiento,
 } from "@/lib/creditos/api/serialize";
+import { Prisma } from "@prisma/client";
 
 const K1 = "11111111-1111-4111-8111-111111111111";
 const K2 = "22222222-2222-4222-8222-222222222222";
@@ -332,12 +335,167 @@ describe("API créditos — corrección y configuración", () => {
   });
 });
 
+/**
+ * DB mínima en memoria para getMiCuentaCreditos (sin Neon).
+ * Simula el contrato Prisma que usa mi-cuenta + createPrismaCreditosStore.getConfig.
+ */
+function createFakeMiCuentaDb(args: {
+  users: { id: string; activo: boolean }[];
+  cuentas: {
+    vendedorId: string;
+    saldoDisponible: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+  }[];
+  config?: {
+    controlActivo: boolean;
+    inicioEn: Date | null;
+    umbralSaldoBajo: string | null;
+  };
+}) {
+  const now = new Date("2026-11-02T12:00:00.000Z");
+  const configRow = args.config
+    ? {
+        id: 1,
+        controlActivo: args.config.controlActivo,
+        inicioEn: args.config.inicioEn,
+        umbralSaldoBajo:
+          args.config.umbralSaldoBajo == null
+            ? null
+            : new Prisma.Decimal(args.config.umbralSaldoBajo),
+        updatedAt: now,
+        updatedByAdminId: "admin-test",
+      }
+    : null;
+
+  return {
+    usuario: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        args.users.find((u) => u.id === where.id) ?? null,
+    },
+    vendedorCreditoCuenta: {
+      findUnique: async ({ where }: { where: { vendedorId: string } }) => {
+        const row = args.cuentas.find((c) => c.vendedorId === where.vendedorId);
+        if (!row) return null;
+        return {
+          vendedorId: row.vendedorId,
+          saldoDisponible: new Prisma.Decimal(row.saldoDisponible),
+          createdAt: row.createdAt ?? now,
+          updatedAt: row.updatedAt ?? now,
+        };
+      },
+    },
+    creditoMovimiento: {
+      count: async () => 0,
+      findMany: async () => [],
+    },
+    creditosConfig: {
+      findUnique: async () => configRow,
+    },
+  };
+}
+
+/** Réplica del paso defensivo de GET /api/creditos/mi-cuenta. */
+function searchParamsForMiCuenta(raw: string): URLSearchParams {
+  const searchParams = new URLSearchParams(raw);
+  searchParams.delete("vendedorId");
+  return searchParams;
+}
+
 describe("API créditos — aislamiento documental", () => {
   it("mi-cuenta usa solo sessionUserId (no query vendedorId)", () => {
     const params = new URLSearchParams("vendedorId=otro-vendedor&page=1");
     params.delete("vendedorId");
     assert.equal(params.get("vendedorId"), null);
-    // getMiCuentaCreditos siempre recibe sessionUserId del guard.
+  });
+
+  it("misma sesión: con y sin vendedorId ajeno → misma cuenta/saldo", async () => {
+    const db = createFakeMiCuentaDb({
+      users: [
+        { id: "vend-sesion", activo: true },
+        { id: "vend-ajeno", activo: true },
+      ],
+      cuentas: [
+        { vendedorId: "vend-sesion", saldoDisponible: "42.50" },
+        { vendedorId: "vend-ajeno", saldoDisponible: "99.00" },
+      ],
+      config: {
+        controlActivo: true,
+        inicioEn: new Date("2026-01-01T04:00:00.000Z"),
+        umbralSaldoBajo: "10.00",
+      },
+    });
+
+    const sinAlien = await getMiCuentaCreditos(db as never, {
+      sessionUserId: "vend-sesion",
+      searchParams: searchParamsForMiCuenta("page=1&pageSize=1"),
+    });
+    const conAlien = await getMiCuentaCreditos(db as never, {
+      sessionUserId: "vend-sesion",
+      searchParams: searchParamsForMiCuenta(
+        "page=1&pageSize=1&vendedorId=vend-ajeno",
+      ),
+    });
+
+    assert.equal(sinAlien.cuenta.tieneCuenta, true);
+    assert.equal(sinAlien.cuenta.saldoDisponible, "42.50");
+    assert.equal(conAlien.cuenta.tieneCuenta, sinAlien.cuenta.tieneCuenta);
+    assert.equal(conAlien.cuenta.saldoDisponible, sinAlien.cuenta.saldoDisponible);
+    assert.equal(conAlien.cuenta.saldoBajo, sinAlien.cuenta.saldoBajo);
+    // No filtra el saldo del vendedor ajeno.
+    assert.notEqual(conAlien.cuenta.saldoDisponible, "99.00");
+  });
+
+  it("dos vendedores ficticios: cada sesión ve solo su saldo", async () => {
+    const db = createFakeMiCuentaDb({
+      users: [
+        { id: "vend-a", activo: true },
+        { id: "vend-b", activo: true },
+      ],
+      cuentas: [
+        { vendedorId: "vend-a", saldoDisponible: "12.00" },
+        { vendedorId: "vend-b", saldoDisponible: "77.25" },
+      ],
+      config: {
+        controlActivo: true,
+        inicioEn: new Date("2026-01-01T04:00:00.000Z"),
+        umbralSaldoBajo: null,
+      },
+    });
+
+    const a = await getMiCuentaCreditos(db as never, {
+      sessionUserId: "vend-a",
+      searchParams: searchParamsForMiCuenta(
+        "page=1&pageSize=1&vendedorId=vend-b",
+      ),
+    });
+    const b = await getMiCuentaCreditos(db as never, {
+      sessionUserId: "vend-b",
+      searchParams: searchParamsForMiCuenta(
+        "page=1&pageSize=1&vendedorId=vend-a",
+      ),
+    });
+
+    assert.equal(a.cuenta.saldoDisponible, "12.00");
+    assert.equal(b.cuenta.saldoDisponible, "77.25");
+    assert.notEqual(a.cuenta.saldoDisponible, b.cuenta.saldoDisponible);
+  });
+
+  it("mi-cuenta config pública no expone metadatos admin", async () => {
+    const store = createMemoryCreditosStore();
+    await actualizarCreditosConfig(store, {
+      controlActivo: false,
+      updatedByAdminId: "admin-secret-id",
+    });
+    const full = serializeConfig(await store.getConfig());
+    const mini = serializeMiCuentaConfig(await store.getConfig());
+    assert.equal(mini.configPersisted, full.configPersisted);
+    assert.equal(mini.controlActivo, full.controlActivo);
+    assert.equal(mini.inicioEn, full.inicioEn);
+    assert.equal("umbralSaldoBajo" in mini, false);
+    assert.equal("updatedAt" in mini, false);
+    assert.equal("updatedByAdminId" in mini, false);
+    assert.equal(full.updatedByAdminId, "admin-secret-id");
   });
 
   it("rutas admin exigen ADMIN; vendedor no puede mutar saldos vía body", () => {

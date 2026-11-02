@@ -8,8 +8,10 @@ import { createPrismaCreditosStore } from "@/lib/creditos/prisma-store";
 import { parseHistorialQuery } from "@/lib/creditos/api/parse";
 import {
   serializeCuentaBasica,
+  serializeMiCuentaConfig,
   serializeMovimiento,
   type CreditoMovimientoPublic,
+  type MiCuentaConfigPublic,
 } from "@/lib/creditos/api/serialize";
 import { toCreditoDecimal } from "@/lib/creditos/money";
 
@@ -20,6 +22,8 @@ type Db = Pick<
 
 export type MiCuentaCreditosResult = {
   activo: boolean;
+  /** Estado mínimo del control (sin metadatos admin). */
+  config: MiCuentaConfigPublic;
   cuenta: ReturnType<typeof serializeCuentaBasica>;
   movimientos: CreditoMovimientoPublic[];
   page: number;
@@ -76,6 +80,7 @@ export async function getMiCuentaCreditos(
 
   return {
     activo,
+    config: serializeMiCuentaConfig(config),
     cuenta: serializeCuentaBasica(
       cuenta
         ? {

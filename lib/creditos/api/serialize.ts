@@ -33,6 +33,16 @@ export type CreditosConfigPublic = {
   updatedByAdminId: string | null;
 };
 
+/**
+ * Subconjunto de config para GET /api/creditos/mi-cuenta (POS / vendedor).
+ * No incluye umbral (ya va en cuenta) ni metadatos admin (updated*).
+ */
+export type MiCuentaConfigPublic = {
+  configPersisted: boolean;
+  controlActivo: boolean;
+  inicioEn: string | null;
+};
+
 export function serializeDecimal(
   value: Prisma.Decimal | null | undefined,
 ): string | null {
@@ -65,6 +75,16 @@ export function serializeConfig(c: CreditosConfigView): CreditosConfigPublic {
     umbralSaldoBajo: serializeDecimal(c.umbralSaldoBajo),
     updatedAt: c.updatedAt.toISOString(),
     updatedByAdminId: c.updatedByAdminId,
+  };
+}
+
+export function serializeMiCuentaConfig(
+  c: CreditosConfigView,
+): MiCuentaConfigPublic {
+  return {
+    configPersisted: c.configPersisted,
+    controlActivo: c.controlActivo,
+    inicioEn: c.inicioEn ? c.inicioEn.toISOString() : null,
   };
 }
 
