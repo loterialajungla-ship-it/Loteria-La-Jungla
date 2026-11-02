@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Card, Input } from "@/components/ui";
+import { Alert, Button, Card, ConfirmDialog, Input } from "@/components/ui";
 import type { CreditosConfigPublic } from "@/lib/creditos/ui/api-types";
 import type { ApiErrorBody } from "@/lib/creditos/ui/api-types";
 import {
@@ -10,6 +10,7 @@ import {
   isoToCaracasLocalParts,
 } from "@/lib/creditos/ui/caracas-instant";
 import { createSubmitGuard } from "@/lib/creditos/ui/submit-guard";
+import { applyConfirmOperationFailure } from "@/lib/ui/confirm-dialog";
 
 const UMBRAL_RE = /^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/;
 
@@ -37,6 +38,11 @@ export function CreditosConfigForm({
   const [umbral, setUmbral] = useState(initial.umbralSaldoBajo ?? "");
   const [limpiarUmbral, setLimpiarUmbral] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingBody, setPendingBody] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const guardRef = useRef(createSubmitGuard());
@@ -58,78 +64,19 @@ export function CreditosConfigForm({
     }
   }, [initial]);
 
-  async function guardar(e: React.FormEvent) {
-    e.preventDefault();
-    if (!initial.configPersisted) {
-      setError(
-        "Configuración no inicializada. Usa el procedimiento operativo de bootstrap.",
-      );
-      return;
-    }
+  function failConfirmed(message: string) {
+    const next = applyConfirmOperationFailure({ errorMessage: message });
+    setConfirmOpen(next.confirmOpen);
+    setPendingBody(null);
+    setError(next.error);
+  }
+
+  async function enviarConfig(body: Record<string, unknown>) {
     if (!guardRef.current.tryAcquire()) return;
     setBusy(true);
     setError(null);
     setOk(null);
-
     try {
-      const body: Record<string, unknown> = {};
-
-      // Solo envía controlActivo si el checkbox cambió respecto al servidor.
-      if (controlActivo !== initial.controlActivo) {
-        body.controlActivo = controlActivo;
-      }
-
-      if (limpiarInicio) {
-        body.inicioEn = null;
-      } else if (fecha.trim()) {
-        const iso = caracasLocalToIsoOffset(fecha, hora || "00:00");
-        if (!iso) {
-          setError("Fecha/hora de inicio inválida (America/Caracas).");
-          return;
-        }
-        if (!initial.inicioEn || !sameInstant(iso, initial.inicioEn)) {
-          body.inicioEn = iso;
-        }
-      }
-
-      if (limpiarUmbral) {
-        body.umbralSaldoBajo = null;
-      } else if (umbral.trim()) {
-        if (!UMBRAL_RE.test(umbral.trim())) {
-          setError("Umbral inválido: no negativo, máximo 2 decimales.");
-          return;
-        }
-        if (umbral.trim() !== (initial.umbralSaldoBajo ?? "")) {
-          body.umbralSaldoBajo = umbral.trim();
-        }
-      }
-
-      if (Object.keys(body).length === 0) {
-        setError("No hay cambios para guardar.");
-        return;
-      }
-
-      if (body.controlActivo === true) {
-        const inicioEfectivo =
-          body.inicioEn !== undefined
-            ? body.inicioEn
-            : limpiarInicio
-              ? null
-              : initial.inicioEn;
-        if (!inicioEfectivo) {
-          setError(
-            "No se puede activar el control sin una fecha/hora de inicio explícita.",
-          );
-          return;
-        }
-        const okConfirm = window.confirm(
-          "¿Activar el control de créditos?\n\n" +
-            "Solo las ventas de VENDEDOR con Ticket.createdAt ≥ inicioEn consumirán saldo.\n" +
-            "No hay deducciones retroactivas. Asegúrate de haber preparado los saldos iniciales.",
-        );
-        if (!okConfirm) return;
-      }
-
       const res = await fetch("/api/admin/creditos/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -139,32 +86,112 @@ export function CreditosConfigForm({
         config?: CreditosConfigPublic;
       };
       if (res.status === 401) {
-        setError("Sesión expirada. Vuelve a iniciar sesión.");
+        failConfirmed("Sesión expirada. Vuelve a iniciar sesión.");
         onSessionExpired?.();
         return;
       }
       if (res.status === 403) {
-        setError("No tienes permiso.");
+        failConfirmed("No tienes permiso.");
         onSessionExpired?.();
         return;
       }
       if (!res.ok || !data.config) {
-        setError(data.error?.message ?? "No se pudo guardar la configuración.");
+        failConfirmed(
+          data.error?.message ?? "No se pudo guardar la configuración.",
+        );
         return;
       }
+      setConfirmOpen(false);
+      setPendingBody(null);
       setOk("Configuración actualizada.");
       onSaved(data.config);
     } catch {
-      setError("Error de red. Inténtalo de nuevo.");
+      failConfirmed("Error de red. Inténtalo de nuevo.");
     } finally {
       guardRef.current.release();
       setBusy(false);
     }
   }
 
+  function onCancelConfirm() {
+    if (busy) return;
+    setConfirmOpen(false);
+    setPendingBody(null);
+  }
+
+  function guardar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!initial.configPersisted) {
+      setError(
+        "Configuración no inicializada. Usa el procedimiento operativo de bootstrap.",
+      );
+      return;
+    }
+
+    setError(null);
+    setOk(null);
+
+    const body: Record<string, unknown> = {};
+
+    // Solo envía controlActivo si el checkbox cambió respecto al servidor.
+    if (controlActivo !== initial.controlActivo) {
+      body.controlActivo = controlActivo;
+    }
+
+    if (limpiarInicio) {
+      body.inicioEn = null;
+    } else if (fecha.trim()) {
+      const iso = caracasLocalToIsoOffset(fecha, hora || "00:00");
+      if (!iso) {
+        setError("Fecha/hora de inicio inválida (America/Caracas).");
+        return;
+      }
+      if (!initial.inicioEn || !sameInstant(iso, initial.inicioEn)) {
+        body.inicioEn = iso;
+      }
+    }
+
+    if (limpiarUmbral) {
+      body.umbralSaldoBajo = null;
+    } else if (umbral.trim()) {
+      if (!UMBRAL_RE.test(umbral.trim())) {
+        setError("Umbral inválido: no negativo, máximo 2 decimales.");
+        return;
+      }
+      if (umbral.trim() !== (initial.umbralSaldoBajo ?? "")) {
+        body.umbralSaldoBajo = umbral.trim();
+      }
+    }
+
+    if (Object.keys(body).length === 0) {
+      setError("No hay cambios para guardar.");
+      return;
+    }
+
+    if (body.controlActivo === true) {
+      const inicioEfectivo =
+        body.inicioEn !== undefined
+          ? body.inicioEn
+          : limpiarInicio
+            ? null
+            : initial.inicioEn;
+      if (!inicioEfectivo) {
+        setError(
+          "No se puede activar el control sin una fecha/hora de inicio explícita.",
+        );
+        return;
+      }
+      setPendingBody(body);
+      setConfirmOpen(true);
+      return;
+    }
+
+    void enviarConfig(body);
+  }
+
   return (
     <Card>
-      <form onSubmit={(e) => void guardar(e)}>
+      <form onSubmit={guardar}>
         <h2 className="text-lg font-bold text-ink">Configuración de créditos</h2>
         <p className="mt-1 text-sm text-ink-muted">
           La fecha de inicio se interpreta en America/Caracas y se envía como
@@ -309,6 +336,24 @@ export function CreditosConfigForm({
           {busy ? "Guardando…" : "Guardar configuración"}
         </Button>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Activar control de créditos"
+        description={
+          "¿Activar el control de créditos?\n\n" +
+          "Solo las ventas de VENDEDOR con Ticket.createdAt ≥ inicioEn consumirán saldo.\n" +
+          "No hay deducciones retroactivas. Asegúrate de haber preparado los saldos iniciales."
+        }
+        confirmLabel="Activar control"
+        cancelLabel="Cancelar"
+        variant="danger"
+        loading={busy}
+        onCancel={onCancelConfirm}
+        onConfirm={() => {
+          if (pendingBody) void enviarConfig(pendingBody);
+        }}
+      />
     </Card>
   );
 }

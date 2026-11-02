@@ -6,7 +6,7 @@ import {
   type E2eRunState,
 } from "./harness";
 import {
-  acceptConfirms,
+  confirmOpenDialog,
   loginAdmin,
   loginVendor,
   openCreditosDetalle,
@@ -21,7 +21,6 @@ test.beforeAll(() => {
 });
 
 test("ADMIN accede a /admin/creditos", async ({ page }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await page.goto("/admin/creditos", { waitUntil: "domcontentloaded" });
   await expect(page.locator("main h1")).toHaveText(/Créditos de vendedores/i, {
@@ -44,7 +43,6 @@ test("VENDEDOR no puede acceder a administración de créditos", async ({
 });
 
 test("asignación actualiza saldo e historial", async ({ page }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await openCreditosDetalle(page, state.vendId);
 
@@ -54,6 +52,7 @@ test("asignación actualiza saldo e historial", async ({ page }) => {
   await asignar.getByLabel("Importe").fill("25.00");
   await asignar.getByLabel("Motivo (opcional)").fill("e2e asignar");
   await asignar.getByRole("button", { name: "Asignar" }).click();
+  await confirmOpenDialog(page, "Asignar");
 
   // Éxito persistido: saldo en cabecera + historial de tabla (no <option> ocultas).
   await expect(
@@ -69,7 +68,6 @@ test("asignación actualiza saldo e historial", async ({ page }) => {
 });
 
 test("retirada válida disminuye el saldo", async ({ page }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await openCreditosDetalle(page, state.vendId);
 
@@ -81,6 +79,7 @@ test("retirada válida disminuye el saldo", async ({ page }) => {
   });
   await retirar.getByLabel("Importe").fill("5.00");
   await retirar.getByRole("button", { name: "Retirar" }).click();
+  await confirmOpenDialog(page, "Retirar");
 
   await expect(
     page.locator("p").filter({ hasText: "Saldo disponible" }).locator("..").getByText("20.00"),
@@ -89,7 +88,6 @@ test("retirada válida disminuye el saldo", async ({ page }) => {
 });
 
 test("retirada superior al saldo: error y saldo intacto", async ({ page }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await openCreditosDetalle(page, state.vendId);
   const before = await readSaldo(state.vendId);
@@ -100,6 +98,7 @@ test("retirada superior al saldo: error y saldo intacto", async ({ page }) => {
   });
   await retirar.getByLabel("Importe").fill("999.00");
   await retirar.getByRole("button", { name: "Retirar" }).click();
+  await confirmOpenDialog(page, "Retirar");
 
   await expect(
     retirar.getByRole("alert").filter({ hasText: /insuficiente/i }),
@@ -109,7 +108,6 @@ test("retirada superior al saldo: error y saldo intacto", async ({ page }) => {
 });
 
 test("corrección se refleja en saldo e historial", async ({ page }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await openCreditosDetalle(page, state.vendId);
   const before = await readSaldo(state.vendId);
@@ -122,6 +120,7 @@ test("corrección se refleja en saldo e historial", async ({ page }) => {
   await corregir.getByLabel("Importe del ajuste").fill("1.00");
   await corregir.getByLabel("Efecto").selectOption("AUMENTAR");
   await corregir.getByRole("button", { name: "Registrar corrección" }).click();
+  await confirmOpenDialog(page, "Registrar corrección");
 
   const expected = (Number(before) + 1).toFixed(2);
   await expect(
@@ -134,7 +133,6 @@ test("corrección se refleja en saldo e historial", async ({ page }) => {
 });
 
 test("filtros en listado de créditos", async ({ page }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await page.goto("/admin/creditos", { waitUntil: "domcontentloaded" });
   await expect(page.locator("main h1")).toHaveText(/Créditos de vendedores/i, {
@@ -153,33 +151,72 @@ test("filtros en listado de créditos", async ({ page }) => {
 });
 
 test("doble envío de asignación no duplica movimientos", async ({ page }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await openCreditosDetalle(page, state.vendId);
   const movBefore = await countMovimientosFor(state.vendId);
+
+  const asignPosts: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST" && /\/asignar(?:\?|$)/.test(req.url())) {
+      asignPosts.push(req.url());
+    }
+  });
 
   const asignar = page.locator("form").filter({
     has: page.getByRole("heading", { name: "Asignar créditos" }),
   });
   await asignar.getByLabel("Importe").fill("2.00");
-  const btn = asignar.getByRole("button", { name: "Asignar" });
-  // Doble clic rápido
-  await Promise.all([btn.click(), btn.click()]);
 
-  // Esperar a que el POST termine (doble clic no debe crear 2).
+  // Abrir ConfirmDialog: un solo clic realista. No debe haber POST ni movimiento.
+  await asignar.getByRole("button", { name: "Asignar" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  expect(asignPosts).toHaveLength(0);
+  expect(await countMovimientosFor(state.vendId)).toBe(movBefore);
+
+  // Cancelar tampoco crea movimiento ni petición financiera.
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(asignPosts).toHaveLength(0);
+  expect(await countMovimientosFor(state.vendId)).toBe(movBefore);
+  await expect(asignar.getByLabel("Importe")).toHaveValue("2.00");
+
+  // Reabrir y confirmar. Doble disparo síncrono del botón de confirmar
+  // (capa UI real) + intento extra en loading; a lo sumo 1 POST / 1 movimiento.
+  await asignar.getByRole("button", { name: "Asignar" }).click();
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+
+  await page.route("**/api/admin/creditos/*/asignar", async (route) => {
+    await new Promise((r) => setTimeout(r, 2_000));
+    await route.continue();
+  });
+
+  const confirmBtn = dialog.getByRole("button", { name: /^Asignar$/ });
+  await confirmBtn.evaluate((el) => {
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+
+  const loadingBtn = dialog.getByRole("button", { name: /Procesando/ });
+  await expect(loadingBtn).toBeVisible({ timeout: 10_000 });
+  await expect(loadingBtn).toBeDisabled();
+  await loadingBtn.click({ force: true }).catch(() => undefined);
+
   await expect
     .poll(async () => countMovimientosFor(state.vendId), {
       timeout: 60_000,
       intervals: [500, 1000, 2000],
     })
     .toBe(movBefore + 1);
+
+  expect(asignPosts).toHaveLength(1);
+  await expect(dialog).toHaveCount(0);
 });
 
 test("sesión inválida: no conserva datos sensibles en detalle", async ({
   page,
   context,
 }) => {
-  acceptConfirms(page);
   await loginAdmin(page, state);
   await openCreditosDetalle(page, state.vendId);
   await expect(page.getByText("Saldo disponible")).toBeVisible();
@@ -192,6 +229,7 @@ test("sesión inválida: no conserva datos sensibles en detalle", async ({
   });
   await asignar.getByLabel("Importe").fill("3.00");
   await asignar.getByRole("button", { name: "Asignar" }).click();
+  await confirmOpenDialog(page, "Asignar");
 
   // onSessionExpired limpia data → ErrorState / mensaje sesión
   await expect(
@@ -204,10 +242,9 @@ test("sesión inválida: no conserva datos sensibles en detalle", async ({
 test("validación de importe inválido sin confirmar operación", async ({
   page,
 }) => {
-  // Sin acceptConfirms: si aparece confirm, fallaría el test (no debe aparecer)
-  let confirmSeen = false;
+  let nativeConfirmSeen = false;
   page.on("dialog", async (d) => {
-    confirmSeen = true;
+    nativeConfirmSeen = true;
     await d.dismiss();
   });
 
@@ -224,6 +261,7 @@ test("validación de importe inválido sin confirmar operación", async ({
   await expect(
     asignar.getByRole("alert").filter({ hasText: /Importe inválido/i }),
   ).toBeVisible({ timeout: 30_000 });
-  expect(confirmSeen).toBe(false);
+  expect(nativeConfirmSeen).toBe(false);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(await countMovimientosFor(state.vendId)).toBe(movBefore);
 });

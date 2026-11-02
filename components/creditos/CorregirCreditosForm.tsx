@@ -1,7 +1,14 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Alert, Button, Card, Input, Select } from "@/components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  ConfirmDialog,
+  Input,
+  Select,
+} from "@/components/ui";
 import type {
   ApiErrorBody,
   CreditoMovimientoPublic,
@@ -14,6 +21,7 @@ import {
 import { isImporteCreditoValido } from "@/lib/creditos/ui/money-input";
 import { formatearInstanteVe } from "@/lib/creditos/ui/caracas-instant";
 import { createSubmitGuard } from "@/lib/creditos/ui/submit-guard";
+import { applyConfirmOperationFailure } from "@/lib/ui/confirm-dialog";
 
 type Props = {
   vendedorId: string;
@@ -35,6 +43,7 @@ export function CorregirCreditosForm({
   const [importe, setImporte] = useState("");
   const [efecto, setEfecto] = useState<"AUMENTAR" | "DISMINUIR">("DISMINUIR");
   const [motivo, setMotivo] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -71,41 +80,50 @@ export function CorregirCreditosForm({
     keyRef.current = null;
   }
 
-  async function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    setOk(null);
+
+    if (!movimientoOrigenId) {
+      setError("Selecciona el movimiento de origen.");
+      return;
+    }
+    // Solo orígenes visibles y aún no corregidos en esta página.
+    if (!candidatos.some((m) => m.id === movimientoOrigenId)) {
+      setError(
+        "El movimiento de origen no es seleccionable en esta página (otro filtro/página, o ya tiene corrección visible). Vuelve a seleccionarlo.",
+      );
+      setMovimientoOrigenId("");
+      invalidateKey();
+      return;
+    }
+    if (!isImporteCreditoValido(importe)) {
+      setError("Importe inválido: positivo con máximo 2 decimales.");
+      return;
+    }
+
+    setConfirmOpen(true);
+  }
+
+  function onCancelConfirm() {
+    if (busy) return;
+    setConfirmOpen(false);
+  }
+
+  function failConfirmed(message: string) {
+    const next = applyConfirmOperationFailure({ errorMessage: message });
+    setConfirmOpen(next.confirmOpen);
+    setError(next.error);
+  }
+
+  async function ejecutarCorreccion() {
     if (!guardRef.current.tryAcquire()) return;
     setBusy(true);
     setError(null);
     setOk(null);
 
     try {
-      if (!movimientoOrigenId) {
-        setError("Selecciona el movimiento de origen.");
-        return;
-      }
-      // Solo orígenes visibles y aún no corregidos en esta página.
-      if (!candidatos.some((m) => m.id === movimientoOrigenId)) {
-        setError(
-          "El movimiento de origen no es seleccionable en esta página (otro filtro/página, o ya tiene corrección visible). Vuelve a seleccionarlo.",
-        );
-        setMovimientoOrigenId("");
-        invalidateKey();
-        return;
-      }
-      if (!isImporteCreditoValido(importe)) {
-        setError("Importe inválido: positivo con máximo 2 decimales.");
-        return;
-      }
-
-      const confirmado = window.confirm(
-        `¿Registrar corrección compensatoria?\n\n` +
-          `Efecto: ${efecto}\nImporte: ${importe.trim()}\n` +
-          `Origen: ${movimientoOrigenId}\nSaldo actual: ${saldoDisponible}\n\n` +
-          `El movimiento original NO se elimina ni se modifica. ` +
-          `Esto no es una reversión automática exacta.`,
-      );
-      if (!confirmado) return;
-
       const fp = fingerprintOperacionCredito({
         tipo: "CORREGIR",
         vendedorId,
@@ -134,33 +152,36 @@ export function CorregirCreditosForm({
       try {
         data = (await res.json()) as ApiErrorBody;
       } catch {
-        setError(
+        failConfirmed(
           "Respuesta inválida del servidor. Si reintentas la misma operación se reutilizará la clave de idempotencia.",
         );
         return;
       }
       if (res.status === 401) {
-        setError("Sesión expirada. Vuelve a iniciar sesión.");
+        failConfirmed("Sesión expirada. Vuelve a iniciar sesión.");
         onSessionExpired?.();
         return;
       }
       if (res.status === 403) {
-        setError("No tienes permiso.");
+        failConfirmed("No tienes permiso.");
         onSessionExpired?.();
         return;
       }
       if (!res.ok) {
-        setError(data.error?.message ?? "No se pudo registrar la corrección.");
+        failConfirmed(
+          data.error?.message ?? "No se pudo registrar la corrección.",
+        );
         return;
       }
       invalidateKey();
       setImporte("");
       setMotivo("");
       setMovimientoOrigenId("");
+      setConfirmOpen(false);
       setOk("Corrección registrada.");
       onSuccess();
     } catch {
-      setError(
+      failConfirmed(
         "Error de red. Si reintentas la misma operación se reutilizará la clave de idempotencia.",
       );
     } finally {
@@ -171,7 +192,7 @@ export function CorregirCreditosForm({
 
   return (
     <Card padding="sm">
-      <form onSubmit={(e) => void onSubmit(e)}>
+      <form onSubmit={onSubmit}>
         <h3 className="text-base font-bold text-ink">
           Corrección compensatoria
         </h3>
@@ -285,6 +306,24 @@ export function CorregirCreditosForm({
           {busy ? "Registrando…" : "Registrar corrección"}
         </Button>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Confirmar corrección"
+        description={
+          `¿Registrar corrección compensatoria?\n\n` +
+          `Efecto: ${efecto}\nImporte: ${importe.trim()}\n` +
+          `Origen: ${movimientoOrigenId}\nSaldo actual: ${saldoDisponible}\n\n` +
+          `El movimiento original NO se elimina ni se modifica. ` +
+          `Esto no es una reversión automática exacta.`
+        }
+        confirmLabel="Registrar corrección"
+        cancelLabel="Cancelar"
+        variant="default"
+        loading={busy}
+        onCancel={onCancelConfirm}
+        onConfirm={() => void ejecutarCorreccion()}
+      />
     </Card>
   );
 }

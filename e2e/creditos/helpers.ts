@@ -38,7 +38,28 @@ export async function openCreditosDetalle(
   });
 }
 
-/** Acepta el window.confirm del navegador. */
+/**
+ * Confirma el ConfirmDialog de producto (role=alertdialog).
+ * Justificación U1: la UI ya no usa window.confirm; sin este paso
+ * los flujos de créditos quedarían a la espera del diálogo.
+ */
+export async function confirmOpenDialog(
+  page: Page,
+  confirmName?: string | RegExp,
+): Promise<void> {
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const name =
+    confirmName ??
+    /^(Asignar|Retirar|Registrar corrección|Activar control|Activar|Desactivar|Confirmar)/;
+  await dialog.getByRole("button", { name }).click();
+}
+
+/**
+ * Compatibilidad: escucha diálogos nativos residuales.
+ * Preferir `confirmOpenDialog` tras acciones que abren ConfirmDialog.
+ * No sustituye la confirmación del producto (ya no hay window.confirm).
+ */
 export function acceptConfirms(page: Page): void {
   page.on("dialog", (d) => void d.accept());
 }

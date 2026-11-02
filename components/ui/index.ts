@@ -8,6 +8,12 @@ export type {
 } from "@/components/ui/Button";
 export { Card } from "@/components/ui/Card";
 export type { CardProps } from "@/components/ui/Card";
+export { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+export type {
+  ConfirmDialogMotivoProps,
+  ConfirmDialogProps,
+  ConfirmDialogVariant,
+} from "@/components/ui/ConfirmDialog";
 export { cn } from "@/components/ui/cn";
 export {
   DataTable,

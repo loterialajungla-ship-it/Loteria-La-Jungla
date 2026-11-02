@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Alert, Button, Card, Input } from "@/components/ui";
+import { Alert, Button, Card, ConfirmDialog, Input } from "@/components/ui";
 import type { ApiErrorBody } from "@/lib/creditos/ui/api-types";
 import {
   fingerprintOperacionCredito,
@@ -12,6 +12,7 @@ import {
   isImporteCreditoValido,
 } from "@/lib/creditos/ui/money-input";
 import { createSubmitGuard } from "@/lib/creditos/ui/submit-guard";
+import { applyConfirmOperationFailure } from "@/lib/ui/confirm-dialog";
 
 type Props = {
   vendedorId: string;
@@ -30,6 +31,7 @@ export function RetirarCreditosForm({
 }: Props) {
   const [importe, setImporte] = useState("");
   const [motivo, setMotivo] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -50,29 +52,49 @@ export function RetirarCreditosForm({
     keyRef.current = null;
   }
 
-  async function onSubmit(e: React.FormEvent) {
+  function buildConfirmDescription(): string {
+    const supera = importeMayorQue(importe, saldoDisponible);
+    let msg =
+      `¿Retirar ${importe.trim()} créditos de ${nombreVendedor}?\n\n` +
+      `Saldo actual: ${saldoDisponible}`;
+    if (supera) {
+      msg +=
+        "\n\nADVERTENCIA: el importe supera el saldo mostrado. El servidor rechazará si no hay saldo suficiente.";
+    }
+    return msg;
+  }
+
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    setOk(null);
+
+    if (!isImporteCreditoValido(importe)) {
+      setError("Importe inválido: positivo con máximo 2 decimales.");
+      return;
+    }
+
+    setConfirmOpen(true);
+  }
+
+  function onCancelConfirm() {
+    if (busy) return;
+    setConfirmOpen(false);
+  }
+
+  function failConfirmed(message: string) {
+    const next = applyConfirmOperationFailure({ errorMessage: message });
+    setConfirmOpen(next.confirmOpen);
+    setError(next.error);
+  }
+
+  async function ejecutarRetiro() {
     if (!guardRef.current.tryAcquire()) return;
     setBusy(true);
     setError(null);
     setOk(null);
 
     try {
-      if (!isImporteCreditoValido(importe)) {
-        setError("Importe inválido: positivo con máximo 2 decimales.");
-        return;
-      }
-
-      const supera = importeMayorQue(importe, saldoDisponible);
-      let msg =
-        `¿Retirar ${importe.trim()} créditos de ${nombreVendedor}?\n\n` +
-        `Saldo actual: ${saldoDisponible}`;
-      if (supera) {
-        msg +=
-          "\n\nADVERTENCIA: el importe supera el saldo mostrado. El servidor rechazará si no hay saldo suficiente.";
-      }
-      if (!window.confirm(msg)) return;
-
       const fp = fingerprintOperacionCredito({
         tipo: "RETIRAR",
         vendedorId,
@@ -97,40 +119,41 @@ export function RetirarCreditosForm({
       try {
         data = (await res.json()) as ApiErrorBody;
       } catch {
-        setError(
+        failConfirmed(
           "Respuesta inválida del servidor. Si reintentas la misma operación se reutilizará la clave de idempotencia.",
         );
         return;
       }
       if (res.status === 401) {
-        setError("Sesión expirada. Vuelve a iniciar sesión.");
+        failConfirmed("Sesión expirada. Vuelve a iniciar sesión.");
         onSessionExpired?.();
         return;
       }
       if (res.status === 403) {
-        setError("No tienes permiso.");
+        failConfirmed("No tienes permiso.");
         onSessionExpired?.();
         return;
       }
       if (!res.ok) {
         const code = data.error?.code;
         if (code === "INSUFFICIENT_CREDITO_SALDO") {
-          setError(
+          failConfirmed(
             data.error?.message ??
               "Saldo insuficiente. El backend rechazó el retiro.",
           );
         } else {
-          setError(data.error?.message ?? "No se pudo retirar.");
+          failConfirmed(data.error?.message ?? "No se pudo retirar.");
         }
         return;
       }
       invalidateKey();
       setImporte("");
       setMotivo("");
+      setConfirmOpen(false);
       setOk("Retiro registrado correctamente.");
       onSuccess();
     } catch {
-      setError(
+      failConfirmed(
         "Error de red. Si reintentas la misma operación se reutilizará la clave de idempotencia.",
       );
     } finally {
@@ -141,7 +164,7 @@ export function RetirarCreditosForm({
 
   return (
     <Card padding="sm">
-      <form onSubmit={(e) => void onSubmit(e)}>
+      <form onSubmit={onSubmit}>
         <h3 className="text-base font-bold text-ink">Retirar créditos</h3>
         <p className="mt-1 text-xs text-ink-muted">
           Saldo actual:{" "}
@@ -209,6 +232,18 @@ export function RetirarCreditosForm({
           {busy ? "Retirando…" : "Retirar"}
         </Button>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Confirmar retiro"
+        description={buildConfirmDescription()}
+        confirmLabel="Retirar"
+        cancelLabel="Cancelar"
+        variant="danger"
+        loading={busy}
+        onCancel={onCancelConfirm}
+        onConfirm={() => void ejecutarRetiro()}
+      />
     </Card>
   );
 }
