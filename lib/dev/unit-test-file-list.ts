@@ -15,17 +15,14 @@ export const UNIT_TEST_EXCLUDED_SUFFIXES = [
 ] as const;
 
 /**
- * Misma cobertura que los globs históricos del runner, sin `**` opaco:
- * - `lib/tickets/*.test.ts`
- * - `lib/tickets/integration/*.test.ts` (solo unitarios; integration.* se filtra)
- * - recursivo en el resto de raíces de dominio.
+ * Misma cobertura que los globs históricos del runner, sin `**` opaco.
+ * `lib/tickets` es recursivo (ui/, integration/ unitarios; *.integration.test.ts se filtra).
  */
 export const UNIT_TEST_ROOTS: ReadonlyArray<{
   relativeDir: string;
   recursive: boolean;
 }> = [
-  { relativeDir: path.join("lib", "tickets"), recursive: false },
-  { relativeDir: path.join("lib", "tickets", "integration"), recursive: false },
+  { relativeDir: path.join("lib", "tickets"), recursive: true },
   { relativeDir: path.join("lib", "auth"), recursive: true },
   { relativeDir: path.join("lib", "users"), recursive: true },
   { relativeDir: path.join("lib", "reports"), recursive: true },

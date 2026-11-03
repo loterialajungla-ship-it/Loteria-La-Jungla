@@ -23,6 +23,10 @@ import {
 import type { PosApuestas } from "@/components/tickets/pos-state";
 import { sanitizeTicketForClientImage } from "@/components/tickets/ticket-image";
 import { useMiCuentaSaldo } from "@/lib/creditos/ui/use-mi-cuenta-saldo";
+import {
+  mapCreateTicketClientResponse,
+  mapCreateTicketNetworkError,
+} from "@/lib/tickets/ui/map-create-ticket-error";
 
 export type HoraDisponibilidadUi = {
   hora: number;
@@ -37,6 +41,11 @@ type Props = {
 };
 
 type Modo = "pos" | "exito";
+
+type PosSaleError = {
+  title: string;
+  message: string;
+};
 
 function quitarHorasCerradas(
   apuestas: PosApuestas,
@@ -77,7 +86,7 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
   const [actualizandoHoras, setActualizandoHoras] = useState(false);
   const [apuestas, setApuestas] = useState<PosApuestas>({});
   const [creando, setCreando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PosSaleError | null>(null);
   const [modo, setModo] = useState<Modo>("pos");
   const [ticket, setTicket] = useState<TicketPreviewData | null>(null);
   const ticketRef = useRef<HTMLElement | null>(null);
@@ -163,56 +172,29 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
         error?: { code?: string; message?: string };
       };
 
-      if (res.status === 401) {
-        setError("Tu sesión ha expirado. Inicia sesión nuevamente.");
-        return;
-      }
-      if (res.status === 409) {
+      const outcome = mapCreateTicketClientResponse(res.status, data);
+
+      if (outcome.clearIdempotencyKey) {
         idempotencyKeyRef.current = null;
-        setError(
-          data.error?.message ??
-            "Se produjo un conflicto al generar el ticket. Inténtalo nuevamente.",
-        );
-        // Incluye INSUFFICIENT_CREDITO_SALDO (U2.2 podrá distinguir el code).
-        // No restar en cliente: refrescar saldo desde el servidor.
-        if (data.error?.code === "INSUFFICIENT_CREDITO_SALDO") {
-          void refreshSaldo();
-        } else if (
-          typeof data.error?.message === "string" &&
-          /saldo|cr[eé]dito/i.test(data.error.message)
-        ) {
-          void refreshSaldo();
-        }
-        return;
       }
-      if (res.status === 400 && data.error?.code === "DRAW_CLOSED") {
-        const horaMatch = /(\d{1,2}):00/.exec(data.error.message ?? "");
-        const label = horaMatch
-          ? `${horaMatch[1].padStart(2, "0")}:00`
-          : "seleccionada";
-        setError(
-          `El sorteo de las ${label} ya cerró. Actualiza las horas disponibles.`,
-        );
-        await actualizarHoras();
-        return;
-      }
-      if ((!res.ok && res.status !== 200) || !data.ticket) {
-        setError(
-          data.error?.message ??
-            "No se pudo crear el ticket. Revisa los datos e inténtalo nuevamente.",
-        );
+
+      if (outcome.kind === "success") {
+        setTicket(sanitizeTicketForClientImage(data.ticket as TicketPreviewData));
+        setModo("exito");
+        if (outcome.clearApuestas) setApuestas({});
+        if (outcome.refreshSaldo) void refreshSaldo();
         return;
       }
 
-      idempotencyKeyRef.current = null;
-      setTicket(sanitizeTicketForClientImage(data.ticket));
-      setModo("exito");
-      setApuestas({});
-      void refreshSaldo();
+      setError({ title: outcome.title, message: outcome.message });
+
+      // Solo lectura informativa; nunca descuenta ni autoriza en cliente.
+      if (outcome.refreshSaldo) void refreshSaldo();
+      if (outcome.refreshHoras) await actualizarHoras();
+      // autoRetryPost siempre false: el vendedor reintenta manualmente.
     } catch {
-      setError(
-        "No se pudo crear el ticket. Puedes reintentar: no se duplicará la venta.",
-      );
+      const outcome = mapCreateTicketNetworkError();
+      setError({ title: outcome.title, message: outcome.message });
     } finally {
       setCreando(false);
     }
@@ -344,8 +326,8 @@ export function TicketPOS({ fechaJuego, horasIniciales, animales }: Props) {
 
           {error ? (
             <div className="mt-4">
-              <Alert variant="error" title="No se pudo crear el ticket">
-                {error}
+              <Alert variant="error" title={error.title}>
+                {error.message}
               </Alert>
             </div>
           ) : (
