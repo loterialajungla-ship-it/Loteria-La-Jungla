@@ -69,7 +69,9 @@ Integración/aceptación **deben** usar solo DB de prueba aislada (`TEST_DATABAS
 | --- | --- | --- |
 | `npm run bootstrap:admin` | Solo **dev-from-recovery** | `BOOTSTRAP_TARGET=dev-from-recovery` + guard del endpoint de recuperación |
 | `npm run bootstrap:admin:production` | Solo **producción** | Dual opt-in (`BOOTSTRAP_TARGET=production` + `CONFIRM_PRODUCTION_BOOTSTRAP=I_UNDERSTAND_THIS_WRITES_PRODUCTION`) + allowlist PRODUCTION; tras backup + `migrate deploy` cuando corresponda |
-
+| `npm run reset-admin-password:production` | Solo **producción** | Dual opt-in propio (`ADMIN_PASSWORD_RESET_TARGET` + `CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET`); actualiza solo `passwordHash` de un ADMIN activo existente; no crea usuarios |
+| `npm run repair-animal-names:production` | Solo **producción** | Dual opt-in propio; solo `Animal.nombre` canónico (`20` = Cerdo) |
+| `npm run rename-admin-login:production` | Solo **producción** | Dual opt-in propio; login ADMIN → `adminlajungla` |
 Retirar variables temporales tras un bootstrap exitoso. **Este preflight no recomienda ejecutar migraciones ni bootstrap ahora**; requieren autorización humana explícita y no se dan por hechos.
 
 ### Solo test / desarrollo local

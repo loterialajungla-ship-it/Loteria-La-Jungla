@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   NEON_ENDPOINTS,
+  CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET_VALUE,
+  CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR_VALUE,
   CONFIRM_PRODUCTION_BOOTSTRAP_VALUE,
+  CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN_VALUE,
+  CONFIRM_TEST_ANIMAL_NAMES_REPAIR_VALUE,
   assertDevRecoveryBootstrapTarget,
   assertEndpointNotForbidden,
   assertIntegrationWriteTarget,
   assertPrismaSeedAllowed,
+  assertProductionAdminPasswordResetTarget,
+  assertProductionAnimalNamesRepairTarget,
   assertProductionBootstrapTarget,
+  assertProductionRenameAdminLoginTarget,
+  assertTestAnimalNamesRepairTarget,
   assertTestDatabaseUrlAuthorized,
   extractNeonEndpointId,
 } from "@/lib/db/neon-endpoint-guard";
@@ -443,5 +451,314 @@ describe("assertProductionBootstrapTarget", () => {
     } catch (e) {
       assertNoSecrets(e instanceof Error ? e.message : String(e));
     }
+  });
+});
+
+describe("assertProductionAdminPasswordResetTarget", () => {
+  const resetEnv = () => ({
+    ADMIN_PASSWORD_RESET_TARGET: "production",
+    CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET:
+      CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET_VALUE,
+    DATABASE_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION, { pooler: true }),
+    DIRECT_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION),
+  });
+
+  it("aborta sin opt-in (antes de aceptar destino)", () => {
+    assert.throws(
+      () => assertProductionAdminPasswordResetTarget({}),
+      /ADMIN_PASSWORD_RESET_TARGET/,
+    );
+  });
+
+  it("no acepta la confirmación del bootstrap como autorización", () => {
+    assert.throws(
+      () =>
+        assertProductionAdminPasswordResetTarget({
+          ...resetEnv(),
+          CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET:
+            CONFIRM_PRODUCTION_BOOTSTRAP_VALUE,
+        }),
+      /CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET/,
+    );
+  });
+
+  it("exige confirmación explícita propia", () => {
+    assert.throws(
+      () =>
+        assertProductionAdminPasswordResetTarget({
+          ...resetEnv(),
+          CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET: "wrong",
+        }),
+      /CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET/,
+    );
+  });
+
+  it("rechaza TEST", () => {
+    assert.throws(
+      () =>
+        assertProductionAdminPasswordResetTarget({
+          ...resetEnv(),
+          DATABASE_URL: neonUrl(NEON_ENDPOINTS.TEST),
+          DIRECT_URL: neonUrl(NEON_ENDPOINTS.TEST),
+        }),
+      /TEST/,
+    );
+  });
+
+  it("rechaza recovery y destinos no allowlisted", () => {
+    assert.throws(
+      () =>
+        assertProductionAdminPasswordResetTarget({
+          ...resetEnv(),
+          DATABASE_URL: neonUrl(NEON_ENDPOINTS.RECOVERY),
+          DIRECT_URL: neonUrl(NEON_ENDPOINTS.RECOVERY),
+        }),
+      /recovery/,
+    );
+    assert.throws(
+      () =>
+        assertProductionAdminPasswordResetTarget({
+          ...resetEnv(),
+          DATABASE_URL: neonUrl("ep-unknown-endpoint-xxxx"),
+          DIRECT_URL: neonUrl("ep-unknown-endpoint-xxxx"),
+        }),
+      /producción autorizado/,
+    );
+  });
+
+  it("acepta PRODUCTION con dual opt-in propio; errores sin secretos", () => {
+    const id = assertProductionAdminPasswordResetTarget(resetEnv());
+    assert.equal(id, NEON_ENDPOINTS.PRODUCTION);
+    try {
+      assertProductionAdminPasswordResetTarget({
+        ...resetEnv(),
+        ADMIN_PASSWORD_RESET_TARGET: "",
+      });
+    } catch (e) {
+      assertNoSecrets(e instanceof Error ? e.message : String(e));
+    }
+  });
+});
+
+describe("assertProductionAnimalNamesRepairTarget", () => {
+  const repairEnv = () => ({
+    ANIMAL_NAMES_REPAIR_TARGET: "production",
+    CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR:
+      CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR_VALUE,
+    DATABASE_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION, { pooler: true }),
+    DIRECT_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION),
+  });
+
+  it("aborta sin opt-in", () => {
+    assert.throws(
+      () => assertProductionAnimalNamesRepairTarget({}),
+      /ANIMAL_NAMES_REPAIR_TARGET/,
+    );
+  });
+
+  it("no acepta confirmaciones de bootstrap ni reset ADMIN", () => {
+    assert.throws(
+      () =>
+        assertProductionAnimalNamesRepairTarget({
+          ...repairEnv(),
+          CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR:
+            CONFIRM_PRODUCTION_BOOTSTRAP_VALUE,
+        }),
+      /CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR/,
+    );
+    assert.throws(
+      () =>
+        assertProductionAnimalNamesRepairTarget({
+          ...repairEnv(),
+          CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR:
+            CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET_VALUE,
+        }),
+      /CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR/,
+    );
+  });
+
+  it("rechaza TEST y destinos no allowlisted", () => {
+    assert.throws(
+      () =>
+        assertProductionAnimalNamesRepairTarget({
+          ...repairEnv(),
+          DATABASE_URL: neonUrl(NEON_ENDPOINTS.TEST),
+          DIRECT_URL: neonUrl(NEON_ENDPOINTS.TEST),
+        }),
+      /TEST/,
+    );
+    assert.throws(
+      () =>
+        assertProductionAnimalNamesRepairTarget({
+          ...repairEnv(),
+          DATABASE_URL: neonUrl("ep-unknown-endpoint-xxxx"),
+          DIRECT_URL: neonUrl("ep-unknown-endpoint-xxxx"),
+        }),
+      /producción autorizado/,
+    );
+  });
+
+  it("acepta PRODUCTION con dual opt-in propio; errores sin secretos", () => {
+    const id = assertProductionAnimalNamesRepairTarget(repairEnv());
+    assert.equal(id, NEON_ENDPOINTS.PRODUCTION);
+    try {
+      assertProductionAnimalNamesRepairTarget({
+        ...repairEnv(),
+        ANIMAL_NAMES_REPAIR_TARGET: "",
+      });
+    } catch (e) {
+      assertNoSecrets(e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  it("no acepta target=test (opt-in de Production intacto)", () => {
+    assert.throws(
+      () =>
+        assertProductionAnimalNamesRepairTarget({
+          ...repairEnv(),
+          ANIMAL_NAMES_REPAIR_TARGET: "test",
+          CONFIRM_TEST_ANIMAL_NAMES_REPAIR:
+            CONFIRM_TEST_ANIMAL_NAMES_REPAIR_VALUE,
+        }),
+      /ANIMAL_NAMES_REPAIR_TARGET|producción/,
+    );
+  });
+});
+
+describe("assertTestAnimalNamesRepairTarget", () => {
+  const testPooled = neonUrl(NEON_ENDPOINTS.TEST, { pooler: true });
+  const testDirect = neonUrl(NEON_ENDPOINTS.TEST);
+  const prod = neonUrl(NEON_ENDPOINTS.PRODUCTION);
+  const recovery = neonUrl(NEON_ENDPOINTS.RECOVERY);
+
+  const repairTestEnv = () => ({
+    ANIMAL_NAMES_REPAIR_TARGET: "test",
+    CONFIRM_TEST_ANIMAL_NAMES_REPAIR: CONFIRM_TEST_ANIMAL_NAMES_REPAIR_VALUE,
+    TEST_DATABASE_URL: testPooled,
+    DATABASE_URL: testDirect,
+    DIRECT_URL: testDirect,
+  });
+
+  it("rechaza si no se activa explícitamente el modo TEST", () => {
+    assert.throws(
+      () => assertTestAnimalNamesRepairTarget({}),
+      /ANIMAL_NAMES_REPAIR_TARGET|test/,
+    );
+    assert.throws(
+      () =>
+        assertTestAnimalNamesRepairTarget({
+          ...repairTestEnv(),
+          ANIMAL_NAMES_REPAIR_TARGET: "production",
+          CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR:
+            CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR_VALUE,
+        }),
+      /ANIMAL_NAMES_REPAIR_TARGET|test/,
+    );
+    assert.throws(
+      () =>
+        assertTestAnimalNamesRepairTarget({
+          ...repairTestEnv(),
+          CONFIRM_TEST_ANIMAL_NAMES_REPAIR:
+            CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR_VALUE,
+        }),
+      /CONFIRM_TEST_ANIMAL_NAMES_REPAIR/,
+    );
+  });
+
+  it("rechaza Production", () => {
+    assert.throws(
+      () =>
+        assertTestAnimalNamesRepairTarget({
+          ...repairTestEnv(),
+          TEST_DATABASE_URL: prod,
+          DATABASE_URL: prod,
+          DIRECT_URL: prod,
+        }),
+      /prohibido|TEST|ep-spring-silence/,
+    );
+    assert.throws(
+      () =>
+        assertTestAnimalNamesRepairTarget({
+          ...repairTestEnv(),
+          DATABASE_URL: prod,
+        }),
+      /DATABASE_URL|prohibido|ep-spring-silence/,
+    );
+  });
+
+  it("rechaza endpoints no permitidos (recovery / desconocido)", () => {
+    assert.throws(
+      () =>
+        assertTestAnimalNamesRepairTarget({
+          ...repairTestEnv(),
+          TEST_DATABASE_URL: recovery,
+          DATABASE_URL: recovery,
+          DIRECT_URL: recovery,
+        }),
+      /prohibido|TEST|ep-old-snow/,
+    );
+    assert.throws(
+      () =>
+        assertTestAnimalNamesRepairTarget({
+          ...repairTestEnv(),
+          TEST_DATABASE_URL: neonUrl("ep-unknown-endpoint-xxxx"),
+          DATABASE_URL: neonUrl("ep-unknown-endpoint-xxxx"),
+          DIRECT_URL: neonUrl("ep-unknown-endpoint-xxxx"),
+        }),
+      /TEST|ep-muddy-fire|recibido/,
+    );
+  });
+
+  it("acepta TEST con dual opt-in propio; errores sin secretos", () => {
+    const id = assertTestAnimalNamesRepairTarget(repairTestEnv());
+    assert.equal(id, NEON_ENDPOINTS.TEST);
+    try {
+      assertTestAnimalNamesRepairTarget({
+        ...repairTestEnv(),
+        ANIMAL_NAMES_REPAIR_TARGET: "",
+      });
+      assert.fail("expected throw");
+    } catch (e) {
+      assertNoSecrets(e instanceof Error ? e.message : String(e));
+    }
+  });
+});
+
+describe("assertProductionRenameAdminLoginTarget", () => {
+  const envOk = () => ({
+    RENAME_ADMIN_LOGIN_TARGET: "production",
+    CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN:
+      CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN_VALUE,
+    DATABASE_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION, { pooler: true }),
+    DIRECT_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION),
+  });
+
+  it("aborta sin opt-in y rechaza confirmaciones ajenas", () => {
+    assert.throws(() => assertProductionRenameAdminLoginTarget({}), /RENAME_ADMIN_LOGIN_TARGET/);
+    assert.throws(
+      () =>
+        assertProductionRenameAdminLoginTarget({
+          ...envOk(),
+          CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN:
+            CONFIRM_PRODUCTION_BOOTSTRAP_VALUE,
+        }),
+      /CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN/,
+    );
+  });
+
+  it("rechaza TEST; acepta PRODUCTION", () => {
+    assert.throws(
+      () =>
+        assertProductionRenameAdminLoginTarget({
+          ...envOk(),
+          DATABASE_URL: neonUrl(NEON_ENDPOINTS.TEST),
+          DIRECT_URL: neonUrl(NEON_ENDPOINTS.TEST),
+        }),
+      /TEST/,
+    );
+    assert.equal(
+      assertProductionRenameAdminLoginTarget(envOk()),
+      NEON_ENDPOINTS.PRODUCTION,
+    );
   });
 });

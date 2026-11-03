@@ -308,6 +308,79 @@ export const PRODUCTION_BOOTSTRAP_TARGET = "production";
 export const CONFIRM_PRODUCTION_BOOTSTRAP_VALUE =
   "I_UNDERSTAND_THIS_WRITES_PRODUCTION";
 
+/** Opt-in 1: destino lógico del reset de contraseña ADMIN en producción. */
+export const PRODUCTION_ADMIN_PASSWORD_RESET_TARGET = "production";
+
+/**
+ * Opt-in 2 del reset ADMIN prod (frase distinta del bootstrap).
+ * Debe coincidir exactamente tras trim. No es un secreto de conexión.
+ */
+export const CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET_VALUE =
+  "I_UNDERSTAND_THIS_RESETS_PRODUCTION_ADMIN_PASSWORD";
+
+/**
+ * Valida DATABASE_URL + DIRECT_URL contra la allowlist PRODUCTION.
+ * Prefijo de mensaje inyectable; nunca registra URLs ni credenciales.
+ */
+function assertProductionDatabaseUrlsAllowlisted(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  abortPrefix: string,
+): string {
+  const databaseRaw = env.DATABASE_URL?.trim() ?? "";
+  if (!databaseRaw) {
+    throw new Error(
+      `${abortPrefix}: falta DATABASE_URL tras autorizar el destino.`,
+    );
+  }
+
+  const directRaw = env.DIRECT_URL?.trim() ?? "";
+  if (!directRaw) {
+    throw new Error(
+      `${abortPrefix}: DIRECT_URL es obligatoria y debe ser el endpoint de producción.`,
+    );
+  }
+
+  const dbEp = extractNeonEndpointId(databaseRaw);
+  if (!dbEp.ok) {
+    throw new Error(`${abortPrefix} (DATABASE_URL): ${dbEp.reason}`);
+  }
+
+  const directEp = extractNeonEndpointId(directRaw);
+  if (!directEp.ok) {
+    throw new Error(`${abortPrefix} (DIRECT_URL): ${directEp.reason}`);
+  }
+
+  if (dbEp.endpointId === NEON_ENDPOINTS.TEST) {
+    throw new Error(`${abortPrefix}: el destino TEST no está permitido.`);
+  }
+  if (dbEp.endpointId === NEON_ENDPOINTS.RECOVERY) {
+    throw new Error(`${abortPrefix}: el destino recovery no está permitido.`);
+  }
+  if (dbEp.endpointId === NEON_ENDPOINTS.DEV_RECOVERY) {
+    throw new Error(
+      `${abortPrefix}: el destino dev-from-recovery no está permitido.`,
+    );
+  }
+
+  if (dbEp.endpointId !== NEON_ENDPOINTS.PRODUCTION) {
+    throw new Error(
+      `${abortPrefix}: DATABASE_URL no es el endpoint de producción autorizado.`,
+    );
+  }
+  if (directEp.endpointId !== NEON_ENDPOINTS.PRODUCTION) {
+    throw new Error(
+      `${abortPrefix}: DIRECT_URL no es el endpoint de producción autorizado.`,
+    );
+  }
+  if (dbEp.endpointId !== directEp.endpointId) {
+    throw new Error(
+      `${abortPrefix}: DATABASE_URL y DIRECT_URL no coinciden.`,
+    );
+  }
+
+  return dbEp.endpointId;
+}
+
 /**
  * Bootstrap del primer ADMIN solo contra el endpoint PRODUCTION allowlisted.
  * Dual opt-in + DATABASE_URL y DIRECT_URL obligatorias y alineadas.
@@ -331,67 +404,150 @@ export function assertProductionBootstrapTarget(
     );
   }
 
-  const databaseRaw = env.DATABASE_URL?.trim() ?? "";
-  if (!databaseRaw) {
+  return assertProductionDatabaseUrlsAllowlisted(
+    env,
+    "Bootstrap de producción abortado",
+  );
+}
+
+/**
+ * Reset de contraseña del ADMIN existente solo contra PRODUCTION allowlisted.
+ * Dual opt-in propio (no reutiliza CONFIRM_PRODUCTION_BOOTSTRAP).
+ * No debilita bootstrap, TEST ni dev-recovery. Nunca registra URLs ni secretos.
+ */
+export function assertProductionAdminPasswordResetTarget(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
+  const target = env.ADMIN_PASSWORD_RESET_TARGET?.trim().toLowerCase() ?? "";
+  if (target !== PRODUCTION_ADMIN_PASSWORD_RESET_TARGET) {
     throw new Error(
-      "Bootstrap de producción abortado: falta DATABASE_URL tras autorizar el destino.",
+      "Reset de contraseña ADMIN de producción abortado: define ADMIN_PASSWORD_RESET_TARGET=production y la confirmación explícita. No se permite reset implícito.",
     );
   }
 
-  const directRaw = env.DIRECT_URL?.trim() ?? "";
-  if (!directRaw) {
+  const confirm = env.CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET?.trim() ?? "";
+  if (confirm !== CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET_VALUE) {
     throw new Error(
-      "Bootstrap de producción abortado: DIRECT_URL es obligatoria y debe ser el endpoint de producción.",
+      "Reset de contraseña ADMIN de producción abortado: CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET no coincide con la frase de confirmación documentada.",
     );
   }
 
-  const dbEp = extractNeonEndpointId(databaseRaw);
-  if (!dbEp.ok) {
+  // La confirmación del bootstrap NO autoriza este reset.
+  return assertProductionDatabaseUrlsAllowlisted(
+    env,
+    "Reset de contraseña ADMIN de producción abortado",
+  );
+}
+
+/** Opt-in 1: destino lógico de la reparación de nombres Animal en producción. */
+export const PRODUCTION_ANIMAL_NAMES_REPAIR_TARGET = "production";
+
+/**
+ * Opt-in 2 de la reparación de nombres Animal en prod (frase distinta de
+ * bootstrap y reset ADMIN). Debe coincidir exactamente tras trim.
+ */
+export const CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR_VALUE =
+  "I_UNDERSTAND_THIS_REPAIRS_PRODUCTION_ANIMAL_NAMES";
+
+/**
+ * Reparación de Animal.nombre solo contra PRODUCTION allowlisted.
+ * Dual opt-in propio (no reutiliza confirmaciones de bootstrap ni reset ADMIN).
+ * Nunca registra URLs ni secretos.
+ */
+export function assertProductionAnimalNamesRepairTarget(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
+  const target = env.ANIMAL_NAMES_REPAIR_TARGET?.trim().toLowerCase() ?? "";
+  if (target !== PRODUCTION_ANIMAL_NAMES_REPAIR_TARGET) {
     throw new Error(
-      `Bootstrap de producción abortado (DATABASE_URL): ${dbEp.reason}`,
+      "Reparación de nombres Animal de producción abortada: define ANIMAL_NAMES_REPAIR_TARGET=production y la confirmación explícita. No se permite reparación implícita.",
     );
   }
 
-  const directEp = extractNeonEndpointId(directRaw);
-  if (!directEp.ok) {
+  const confirm = env.CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR?.trim() ?? "";
+  if (confirm !== CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR_VALUE) {
     throw new Error(
-      `Bootstrap de producción abortado (DIRECT_URL): ${directEp.reason}`,
+      "Reparación de nombres Animal de producción abortada: CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR no coincide con la frase de confirmación documentada.",
     );
   }
 
-  if (dbEp.endpointId === NEON_ENDPOINTS.TEST) {
+  return assertProductionDatabaseUrlsAllowlisted(
+    env,
+    "Reparación de nombres Animal de producción abortada",
+  );
+}
+
+/** Opt-in 1: destino lógico de la reparación de nombres Animal en TEST. */
+export const TEST_ANIMAL_NAMES_REPAIR_TARGET = "test";
+
+/**
+ * Opt-in 2 de la reparación de nombres Animal en TEST (frase distinta de
+ * la reparación de Production y de otros procedimientos).
+ * Debe coincidir exactamente tras trim.
+ */
+export const CONFIRM_TEST_ANIMAL_NAMES_REPAIR_VALUE =
+  "I_UNDERSTAND_THIS_REPAIRS_TEST_ANIMAL_NAMES";
+
+/**
+ * Reparación de Animal.nombre solo contra el endpoint TEST autorizado.
+ * Dual opt-in propio (no reutiliza ni debilita el dual opt-in de Production).
+ * Exige TEST_DATABASE_URL + DATABASE_URL (+ DIRECT_URL si existe) en
+ * ep-muddy-fire-b44816w0 vía `assertIntegrationWriteTarget`.
+ * Nunca registra URLs ni secretos.
+ */
+export function assertTestAnimalNamesRepairTarget(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
+  const target = env.ANIMAL_NAMES_REPAIR_TARGET?.trim().toLowerCase() ?? "";
+  if (target !== TEST_ANIMAL_NAMES_REPAIR_TARGET) {
     throw new Error(
-      "Bootstrap de producción abortado: el destino TEST no está permitido.",
-    );
-  }
-  if (dbEp.endpointId === NEON_ENDPOINTS.RECOVERY) {
-    throw new Error(
-      "Bootstrap de producción abortado: el destino recovery no está permitido.",
-    );
-  }
-  if (dbEp.endpointId === NEON_ENDPOINTS.DEV_RECOVERY) {
-    throw new Error(
-      "Bootstrap de producción abortado: el destino dev-from-recovery no está permitido. Usa bootstrap:admin.",
+      "Reparación de nombres Animal de TEST abortada: define ANIMAL_NAMES_REPAIR_TARGET=test y la confirmación explícita. No se permite reparación implícita.",
     );
   }
 
-  if (dbEp.endpointId !== NEON_ENDPOINTS.PRODUCTION) {
+  const confirm = env.CONFIRM_TEST_ANIMAL_NAMES_REPAIR?.trim() ?? "";
+  if (confirm !== CONFIRM_TEST_ANIMAL_NAMES_REPAIR_VALUE) {
     throw new Error(
-      "Bootstrap de producción abortado: DATABASE_URL no es el endpoint de producción autorizado.",
-    );
-  }
-  if (directEp.endpointId !== NEON_ENDPOINTS.PRODUCTION) {
-    throw new Error(
-      "Bootstrap de producción abortado: DIRECT_URL no es el endpoint de producción autorizado.",
-    );
-  }
-  if (dbEp.endpointId !== directEp.endpointId) {
-    throw new Error(
-      "Bootstrap de producción abortado: DATABASE_URL y DIRECT_URL no coinciden.",
+      "Reparación de nombres Animal de TEST abortada: CONFIRM_TEST_ANIMAL_NAMES_REPAIR no coincide con la frase de confirmación documentada.",
     );
   }
 
-  return dbEp.endpointId;
+  // Rechaza Production y cualquier endpoint no allowlisted como TEST.
+  const writeTarget = assertIntegrationWriteTarget(env);
+  return writeTarget.databaseEndpointId;
+}
+
+/** Opt-in 1: renombrar login del ADMIN en producción. */
+export const PRODUCTION_RENAME_ADMIN_LOGIN_TARGET = "production";
+
+export const CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN_VALUE =
+  "I_UNDERSTAND_THIS_RENAMES_PRODUCTION_ADMIN_LOGIN";
+
+/**
+ * Cambio de Usuario.usuario del ADMIN activo solo en PRODUCTION.
+ * Confirmación distinta de bootstrap, reset password y repair animales.
+ */
+export function assertProductionRenameAdminLoginTarget(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
+  const target = env.RENAME_ADMIN_LOGIN_TARGET?.trim().toLowerCase() ?? "";
+  if (target !== PRODUCTION_RENAME_ADMIN_LOGIN_TARGET) {
+    throw new Error(
+      "Renombre de login ADMIN de producción abortado: define RENAME_ADMIN_LOGIN_TARGET=production y la confirmación explícita. No se permite renombre implícito.",
+    );
+  }
+
+  const confirm = env.CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN?.trim() ?? "";
+  if (confirm !== CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN_VALUE) {
+    throw new Error(
+      "Renombre de login ADMIN de producción abortado: CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN no coincide con la frase de confirmación documentada.",
+    );
+  }
+
+  return assertProductionDatabaseUrlsAllowlisted(
+    env,
+    "Renombre de login ADMIN de producción abortado",
+  );
 }
 
 /**
