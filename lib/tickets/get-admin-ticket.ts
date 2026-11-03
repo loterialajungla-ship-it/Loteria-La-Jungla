@@ -10,6 +10,10 @@ import {
   type LineaPublicaLiquidada,
   type ResultadoSorteoRef,
 } from "@/lib/tickets/ticket-liquidation";
+import {
+  formatTicketCreatorDisplay,
+  type TicketCreatorDisplay,
+} from "@/lib/tickets/ticket-creator-display";
 
 type Db = Pick<PrismaClient, "ticket" | "resultado">;
 
@@ -28,12 +32,10 @@ export type AdminTicketDetalle = {
   premioTotal: string;
   liquidacionCompleta: boolean;
   anuladoAt: string | null;
-  /**
-   * TODO(auth-usuarios): enlazar con Usuario ADMIN autenticado.
-   * Hoy permanece null (no existe tabla Usuario).
-   */
   anuladoPorId: string | null;
   motivoAnulacion: string | null;
+  /** Creador histórico (`Ticket.vendedorId`); no inventa datos. */
+  creadoPor: TicketCreatorDisplay;
   lineas: LineaPublicaLiquidada[];
 };
 
@@ -53,6 +55,14 @@ export async function getAdminTicketById(
     include: {
       lineas: {
         orderBy: [{ hora: "asc" }, { numeroAnimal: "asc" }],
+      },
+      vendedor: {
+        select: {
+          id: true,
+          nombre: true,
+          usuario: true,
+          rol: true,
+        },
       },
     },
   });
@@ -107,6 +117,17 @@ export async function getAdminTicketById(
     lineas,
   });
 
+  const vendedor =
+    ticket.vendedor &&
+    (ticket.vendedor.rol === "ADMIN" || ticket.vendedor.rol === "VENDEDOR")
+      ? {
+          id: ticket.vendedor.id,
+          nombre: ticket.vendedor.nombre,
+          usuario: ticket.vendedor.usuario,
+          rol: ticket.vendedor.rol,
+        }
+      : null;
+
   return {
     id: ticket.id,
     numeroVisible: ticket.numeroVisible,
@@ -122,6 +143,7 @@ export async function getAdminTicketById(
     anuladoAt: ticket.anuladoAt ? ticket.anuladoAt.toISOString() : null,
     anuladoPorId: ticket.anuladoPorId,
     motivoAnulacion: ticket.motivoAnulacion,
+    creadoPor: formatTicketCreatorDisplay(vendedor),
     lineas,
   };
 }

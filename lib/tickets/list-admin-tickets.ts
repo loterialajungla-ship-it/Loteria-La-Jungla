@@ -13,6 +13,10 @@ import {
   type EstadoTicketPublico,
   type ResultadoSorteoRef,
 } from "@/lib/tickets/ticket-liquidation";
+import {
+  formatTicketCreatorDisplay,
+  type TicketCreatorDisplay,
+} from "@/lib/tickets/ticket-creator-display";
 
 type Db = Pick<PrismaClient, "ticket" | "resultado">;
 
@@ -26,6 +30,8 @@ export type AdminTicketListItem = {
   estado: EstadoTicket;
   /** Estado derivado de liquidación */
   estadoDerivado: EstadoTicketPublico;
+  /** Creador histórico vía Ticket.vendedorId (solo ADMIN). */
+  creadoPor: TicketCreatorDisplay;
 };
 
 export type AdminListTicketsResult = {
@@ -73,6 +79,14 @@ export async function listAdminTickets(
             numeroAnimal: true,
             nombreAnimalSnapshot: true,
             importe: true,
+          },
+        },
+        vendedor: {
+          select: {
+            id: true,
+            nombre: true,
+            usuario: true,
+            rol: true,
           },
         },
       },
@@ -127,6 +141,17 @@ export async function listAdminTickets(
       estadosLineas: lineas.map((l) => l.estado),
     });
 
+    const vendedor =
+      ticket.vendedor &&
+      (ticket.vendedor.rol === "ADMIN" || ticket.vendedor.rol === "VENDEDOR")
+        ? {
+            id: ticket.vendedor.id,
+            nombre: ticket.vendedor.nombre,
+            usuario: ticket.vendedor.usuario,
+            rol: ticket.vendedor.rol,
+          }
+        : null;
+
     return {
       id: ticket.id,
       numeroVisible: ticket.numeroVisible,
@@ -135,6 +160,7 @@ export async function listAdminTickets(
       totalApostado: moneyToFixed2(ticket.totalApostado),
       estado: ticket.estado,
       estadoDerivado,
+      creadoPor: formatTicketCreatorDisplay(vendedor),
     };
   });
 
