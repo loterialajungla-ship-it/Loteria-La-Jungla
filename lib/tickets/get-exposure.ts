@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   HORAS_SORTEO,
@@ -17,15 +17,21 @@ import {
 export type { ExposicionSorteo };
 
 /**
+ * Superficie mínima para leer exposición.
+ * Compatible con `PrismaClient` y con el cliente interactivo de `$transaction`.
+ */
+export type ExposureDb = Pick<PrismaClient, "animal" | "ticketLinea">;
+
+/**
  * Exposición / riesgo de un sorteo (fecha + hora).
  * Solo tickets EMITIDO. Usa multiplicadorUsado de cada ticket.
  *
- * `db` opcional para suites (cliente de fábrica); default `@/lib/prisma`.
+ * `db` opcional para suites / TX de auto-publish; default `@/lib/prisma`.
  */
 export async function getExposureForDraw(args: {
   fechaJuego: string;
   hora: number;
-  db?: PrismaClient;
+  db?: ExposureDb | Prisma.TransactionClient;
 }): Promise<ExposicionSorteo> {
   const db = args.db ?? prisma;
   const fecha = parseFechaYYYYMMDD(args.fechaJuego);
