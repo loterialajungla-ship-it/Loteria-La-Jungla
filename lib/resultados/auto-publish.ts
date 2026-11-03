@@ -4,6 +4,7 @@ import { fechaAYYYYMMDD } from "@/lib/fecha";
 import {
   assertCanonicalAnimalCatalog,
 } from "@/lib/resultados/catalogo-animalitos-canonico";
+import { getAnimalsWithMinimumExposure } from "@/lib/resultados/min-exposure-selection";
 import {
   classifyP2002Target,
   isUniqueViolation,
@@ -14,6 +15,7 @@ import {
   type DrawSlot,
 } from "@/lib/resultados/pending-slots";
 import { reconcilePendingScheduleForPublishedSlot } from "@/lib/resultados/reconcile-pending-schedule";
+import { getExposureForDraw } from "@/lib/tickets/get-exposure";
 
 export { classifyP2002Target } from "@/lib/resultados/p2002";
 
@@ -82,12 +84,14 @@ export type TryCreateAutomaticOptions = {
 /**
  * Intenta crear un resultado para (fecha, hora) vencida sin Resultado.
  * Preferencia: programación PENDIENTE → Resultado MANUAL con ese número.
- * Si no hay pendiente: AUTOMATICO aleatorio (comportamiento histórico).
+ * Si no hay pendiente: AUTOMATICO entre animales con exposición mínima
+ * del sorteo (fecha+hora), vía getExposureForDraw + pickRandomAnimalNumero.
  * Create-only: si ya existe, no sobrescribe. Idempotente (@@unique + P2002).
  * Fail-closed: valida catálogo canónico antes de crear/auditar.
  *
  * Atomicidad programada: create + updateMany(id, PENDIENTE, numero) con
  * count===1; si no, throw → rollback de Resultado y auditoría de la TX.
+ * Exposición AUTOMATICO: lectura dentro de la misma TX que el create.
  */
 export async function tryCreateAutomaticResult(
   db: AutoPublishDb,
@@ -121,8 +125,7 @@ export async function tryCreateAutomaticResult(
     });
     assertCanonicalAnimalCatalog(catalogRows);
   }
-  const numerosCatalogo = catalogRows.map((a) => a.numero);
-  const catalogSet = new Set(numerosCatalogo);
+  const catalogSet = new Set(catalogRows.map((a) => a.numero));
 
   try {
     const created = await db.$transaction(async (tx) => {
@@ -136,10 +139,35 @@ export async function tryCreateAutomaticResult(
         programado?.estado === "PENDIENTE" &&
         catalogSet.has(programado.numero);
 
-      const numeroMaterializado = usarProgramado
-        ? programado!.numero
-        : pickRandomAnimalNumero(numerosCatalogo);
-      const origen: OrigenResultado = usarProgramado ? "MANUAL" : "AUTOMATICO";
+      let numeroMaterializado: string;
+      let origen: OrigenResultado;
+      let seleccionAuto:
+        | {
+            modoSeleccion: "MIN_EXPOSICION";
+            exposicionMinima: string;
+            candidatos: string[];
+          }
+        | undefined;
+
+      if (usarProgramado) {
+        numeroMaterializado = programado!.numero;
+        origen = "MANUAL";
+      } else {
+        // Fuente única de verdad: misma fecha/hora del slot, solo EMITIDO.
+        const exposicion = await getExposureForDraw({
+          fechaJuego: fechaStr,
+          hora: slot.hora,
+          db: tx,
+        });
+        const minSel = getAnimalsWithMinimumExposure(exposicion.animales);
+        numeroMaterializado = pickRandomAnimalNumero(minSel.numeros);
+        origen = "AUTOMATICO";
+        seleccionAuto = {
+          modoSeleccion: "MIN_EXPOSICION",
+          exposicionMinima: minSel.exposicionMinima,
+          candidatos: minSel.numeros,
+        };
+      }
 
       const row = await tx.resultado.create({
         data: {
@@ -191,6 +219,7 @@ export async function tryCreateAutomaticResult(
           ...(desdeProgramacion && programacionId
             ? { desdeProgramacion: true, programacionId }
             : {}),
+          ...(seleccionAuto ?? {}),
         },
       });
 
@@ -251,7 +280,8 @@ export async function tryCreateAutomaticResult(
 /**
  * Publica resultados para todas las franjas vencidas del día
  * America/Caracas que aún no tengan resultado.
- * Preferencia: programación PENDIENTE → MANUAL; si no, AUTOMATICO aleatorio.
+ * Preferencia: programación PENDIENTE → MANUAL; si no, AUTOMATICO entre
+ * animales con exposición mínima del sorteo.
  * Un fallo en una franja no detiene las demás.
  *
  * Fail-closed: valida el catálogo canónico (38 números + nombres) **antes**

@@ -13,6 +13,7 @@ import {
   tryCreateAutomaticResult,
 } from "@/lib/resultados/auto-publish";
 import type { DrawSlot } from "@/lib/resultados/pending-slots";
+import { fechaAYYYYMMDD } from "@/lib/fecha";
 
 const SLOT: DrawSlot = {
   fecha: new Date(Date.UTC(2026, 9, 2, 4, 0, 0)),
@@ -51,10 +52,21 @@ function p2002(
   });
 }
 
+type ExposureLineaFake = {
+  ticketId: string;
+  numeroAnimal: string;
+  importe: Prisma.Decimal | string;
+  fechaJuego: Date;
+  hora: number;
+  ticket: { multiplicadorUsado: number; estado?: "EMITIDO" | "ANULADO" };
+};
+
 function makePublishFakeDb(opts?: {
   catalog?: { numero: string; nombre: string }[];
   resultados?: ResultadoRow[];
   schedules?: ScheduleRow[];
+  /** Líneas para getExposureForDraw (solo EMITIDO se agregan). */
+  exposureLineas?: ExposureLineaFake[];
   /**
    * Simula P2002 en create: inserta `row` (si se pasa) y lanza con el target dado.
    * Sin `row`, no queda Resultado (P2002 sin evidencia de franja).
@@ -75,6 +87,7 @@ function makePublishFakeDb(opts?: {
   for (const s of opts?.schedules ?? []) {
     schedules.set(slotKey(s.fecha, s.hora), { ...s });
   }
+  const exposureLineas = [...(opts?.exposureLineas ?? [])];
   /** Resultados “comprometidos por otra TX”; sobreviven al rollback del fake. */
   const peerCommitted = new Map<string, ResultadoRow>();
 
@@ -83,7 +96,9 @@ function makePublishFakeDb(opts?: {
     auditCalls: 0,
     txCalls: 0,
     scheduleUpdateManyCalls: 0,
+    exposureLineQueries: 0,
   };
+  const auditDetalles: unknown[] = [];
 
   type CreateArgs = {
     data: {
@@ -117,9 +132,41 @@ function makePublishFakeDb(opts?: {
     stats,
     resultados,
     schedules,
+    auditDetalles,
     animal: {
       async findMany() {
         return catalog.map((a) => ({ ...a }));
+      },
+    },
+    ticketLinea: {
+      async findMany(args: {
+        where: {
+          fechaJuego: Date;
+          hora: number;
+          ticket: { estado: string };
+        };
+        select: unknown;
+      }) {
+        stats.exposureLineQueries += 1;
+        const estadoReq = args.where.ticket.estado;
+        // @db.Date: comparar día calendario UTC, no el instante completo.
+        const fechaKey = fechaAYYYYMMDD(args.where.fechaJuego);
+        return exposureLineas
+          .filter(
+            (l) =>
+              fechaAYYYYMMDD(l.fechaJuego) === fechaKey &&
+              l.hora === args.where.hora &&
+              (l.ticket.estado ?? "EMITIDO") === estadoReq,
+          )
+          .map((l) => ({
+            ticketId: l.ticketId,
+            numeroAnimal: l.numeroAnimal,
+            importe:
+              typeof l.importe === "string"
+                ? new Prisma.Decimal(l.importe)
+                : l.importe,
+            ticket: { multiplicadorUsado: l.ticket.multiplicadorUsado },
+          }));
       },
     },
     resultado: {
@@ -209,8 +256,13 @@ function makePublishFakeDb(opts?: {
       },
     },
     auditoria: {
-      async create() {
+      async create(args: { data: { detalle: string | null } }) {
         stats.auditCalls += 1;
+        if (args.data.detalle) {
+          auditDetalles.push(JSON.parse(args.data.detalle));
+        } else {
+          auditDetalles.push(null);
+        }
         return {};
       },
     },
@@ -303,6 +355,12 @@ describe("tryCreateAutomaticResult — catálogo canónico", () => {
     }
     assert.equal(db.stats.createCalls, 1);
     assert.equal(db.stats.auditCalls, 1);
+    assert.equal(db.stats.exposureLineQueries, 1);
+    const detalle = db.auditDetalles[0] as Record<string, unknown>;
+    assert.equal(detalle.modoSeleccion, "MIN_EXPOSICION");
+    assert.equal(detalle.exposicionMinima, "0.00");
+    assert.ok(Array.isArray(detalle.candidatos));
+    assert.equal((detalle.candidatos as string[]).length, 38);
   });
 
   it("catalogRows inválidos (invocación directa) → rechaza sin escritura", async () => {
@@ -351,9 +409,15 @@ describe("tryCreateAutomaticResult — programación pendiente", () => {
     assert.equal(db.stats.createCalls, 1);
     assert.equal(db.stats.scheduleUpdateManyCalls, 1);
     assert.equal(db.stats.auditCalls, 1);
+    assert.equal(db.stats.exposureLineQueries, 0);
+    const detalleManual = db.auditDetalles[0] as Record<string, unknown>;
+    assert.equal(detalleManual.origen, "MANUAL");
+    assert.equal(detalleManual.modoSeleccion, undefined);
+    assert.equal(detalleManual.exposicionMinima, undefined);
+    assert.equal(detalleManual.candidatos, undefined);
   });
 
-  it("sin PENDIENTE → AUTOMATICO aleatorio", async () => {
+  it("sin PENDIENTE → AUTOMATICO por mínima exposición", async () => {
     const db = makePublishFakeDb();
     const r = await tryCreateAutomaticResult(db as never, SLOT, new Date());
     assert.equal(r.status, "created");
@@ -361,6 +425,7 @@ describe("tryCreateAutomaticResult — programación pendiente", () => {
       assert.equal(r.origen, "AUTOMATICO");
     }
     assert.equal(db.stats.scheduleUpdateManyCalls, 0);
+    assert.equal(db.stats.exposureLineQueries, 1);
   });
 
   it("CANCELADO / PUBLICADO / SUPERSEDED no se publican (cae a aleatorio)", async () => {
@@ -936,5 +1001,195 @@ describe("runAutomaticResultsPublish — aislamiento de errores", () => {
     assert.equal(r9.origen, "MANUAL");
     assert.ok(r10 && r10.status === "created");
     assert.equal(r10.origen, "AUTOMATICO");
+  });
+});
+
+describe("tryCreateAutomaticResult — mínima exposición", () => {
+  const fechaLinea = SLOT.fecha;
+
+  it("AUTOMATICO solo elige entre animales con exposición mínima", async () => {
+    const db = makePublishFakeDb({
+      exposureLineas: [
+        {
+          ticketId: "t-high",
+          numeroAnimal: "03",
+          importe: "10.00",
+          fechaJuego: fechaLinea,
+          hora: SLOT.hora,
+          ticket: { multiplicadorUsado: 30, estado: "EMITIDO" },
+        },
+        {
+          ticketId: "t-mid-a",
+          numeroAnimal: "05",
+          importe: "4.00",
+          fechaJuego: fechaLinea,
+          hora: SLOT.hora,
+          ticket: { multiplicadorUsado: 30, estado: "EMITIDO" },
+        },
+        {
+          ticketId: "t-mid-b",
+          numeroAnimal: "12",
+          importe: "4.00",
+          fechaJuego: fechaLinea,
+          hora: SLOT.hora,
+          ticket: { multiplicadorUsado: 30, estado: "EMITIDO" },
+        },
+      ],
+    });
+
+    const r = await tryCreateAutomaticResult(db as never, SLOT, new Date());
+    assert.equal(r.status, "created");
+    if (r.status !== "created") return;
+
+    assert.equal(r.origen, "AUTOMATICO");
+    // Mínimo = 0.00 → todos excepto 03, 05, 12
+    assert.ok(!["03", "05", "12"].includes(r.numero));
+    assert.equal(db.stats.exposureLineQueries, 1);
+
+    const detalle = db.auditDetalles[0] as {
+      modoSeleccion: string;
+      exposicionMinima: string;
+      candidatos: string[];
+      numeroNuevo: string;
+    };
+    assert.equal(detalle.modoSeleccion, "MIN_EXPOSICION");
+    assert.equal(detalle.exposicionMinima, "0.00");
+    assert.equal(detalle.candidatos.length, 35);
+    assert.ok(detalle.candidatos.includes(r.numero));
+    assert.equal(detalle.numeroNuevo, r.numero);
+  });
+
+  it("consulta exposición con fecha y hora exactas del slot", async () => {
+    const otrasFecha = new Date(Date.UTC(2026, 9, 3, 4, 0, 0));
+    const db = makePublishFakeDb({
+      exposureLineas: [
+        // Misma fecha, otra hora → no cuenta
+        {
+          ticketId: "t-otra-hora",
+          numeroAnimal: "01",
+          importe: "100.00",
+          fechaJuego: fechaLinea,
+          hora: SLOT.hora + 1,
+          ticket: { multiplicadorUsado: 30, estado: "EMITIDO" },
+        },
+        // Otra fecha, misma hora → no cuenta
+        {
+          ticketId: "t-otra-fecha",
+          numeroAnimal: "02",
+          importe: "100.00",
+          fechaJuego: otrasFecha,
+          hora: SLOT.hora,
+          ticket: { multiplicadorUsado: 30, estado: "EMITIDO" },
+        },
+        // Slot exacto: solo 20 apostado → mínimo 0 en el resto
+        {
+          ticketId: "t-slot",
+          numeroAnimal: "20",
+          importe: "5.00",
+          fechaJuego: fechaLinea,
+          hora: SLOT.hora,
+          ticket: { multiplicadorUsado: 30, estado: "EMITIDO" },
+        },
+      ],
+    });
+
+    const r = await tryCreateAutomaticResult(db as never, SLOT, new Date());
+    assert.equal(r.status, "created");
+    if (r.status !== "created") return;
+    assert.notEqual(r.numero, "20");
+    const detalle = db.auditDetalles[0] as { candidatos: string[] };
+    assert.ok(!detalle.candidatos.includes("20"));
+    assert.equal(detalle.candidatos.length, 37);
+  });
+
+  it("tickets ANULADO no incrementan exposición; EMITIDO sí", async () => {
+    const db = makePublishFakeDb({
+      exposureLineas: [
+        {
+          ticketId: "t-anul",
+          numeroAnimal: "07",
+          importe: "50.00",
+          fechaJuego: fechaLinea,
+          hora: SLOT.hora,
+          ticket: { multiplicadorUsado: 30, estado: "ANULADO" },
+        },
+        {
+          ticketId: "t-emit",
+          numeroAnimal: "08",
+          importe: "1.00",
+          fechaJuego: fechaLinea,
+          hora: SLOT.hora,
+          ticket: { multiplicadorUsado: 30, estado: "EMITIDO" },
+        },
+      ],
+    });
+
+    const r = await tryCreateAutomaticResult(db as never, SLOT, new Date());
+    assert.equal(r.status, "created");
+    if (r.status !== "created") return;
+    // 07 anulado → exposición 0; 08 emitido → no elegible si hay ceros
+    assert.notEqual(r.numero, "08");
+    const detalle = db.auditDetalles[0] as {
+      exposicionMinima: string;
+      candidatos: string[];
+    };
+    assert.equal(detalle.exposicionMinima, "0.00");
+    assert.ok(detalle.candidatos.includes("07"));
+    assert.ok(!detalle.candidatos.includes("08"));
+  });
+
+  it("empate en mínimo positivo: solo esos candidatos", async () => {
+    // Todos los animales con algo; 05 y 12 empatan en el mínimo.
+    const lineas: ExposureLineaFake[] = ANIMALES_CANONICOS.map((a) => ({
+      ticketId: `t-${a.numero}`,
+      numeroAnimal: a.numero,
+      importe:
+        a.numero === "05" || a.numero === "12" ? "4.00" : "10.00",
+      fechaJuego: fechaLinea,
+      hora: SLOT.hora,
+      ticket: { multiplicadorUsado: 30, estado: "EMITIDO" as const },
+    }));
+    const db = makePublishFakeDb({ exposureLineas: lineas });
+
+    const r = await tryCreateAutomaticResult(db as never, SLOT, new Date());
+    assert.equal(r.status, "created");
+    if (r.status !== "created") return;
+    assert.ok(["05", "12"].includes(r.numero));
+    const detalle = db.auditDetalles[0] as {
+      exposicionMinima: string;
+      candidatos: string[];
+    };
+    assert.equal(detalle.exposicionMinima, "120.00");
+    assert.deepEqual(detalle.candidatos, ["05", "12"]);
+  });
+
+  it("segunda ejecución → skipped_exists sin nueva exposición", async () => {
+    const db = makePublishFakeDb();
+    const first = await tryCreateAutomaticResult(db as never, SLOT, new Date());
+    assert.equal(first.status, "created");
+    assert.equal(db.stats.exposureLineQueries, 1);
+
+    const second = await tryCreateAutomaticResult(db as never, SLOT, new Date());
+    assert.equal(second.status, "skipped_exists");
+    assert.equal(db.stats.exposureLineQueries, 1);
+    assert.equal(db.stats.createCalls, 1);
+  });
+
+  it("Resultado existente no consulta exposición", async () => {
+    const db = makePublishFakeDb({
+      resultados: [
+        {
+          id: "res-1",
+          fecha: SLOT.fecha,
+          hora: SLOT.hora,
+          numero: "03",
+          origen: "MANUAL",
+        },
+      ],
+    });
+    const r = await tryCreateAutomaticResult(db as never, SLOT, new Date());
+    assert.equal(r.status, "skipped_exists");
+    assert.equal(db.stats.exposureLineQueries, 0);
+    assert.equal(db.stats.txCalls, 0);
   });
 });
