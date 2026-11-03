@@ -183,6 +183,7 @@ export function AdminTicketsSortableHead({ sort, listParams }: SortViewProps) {
           {label}
         </SortableDataTableTh>
       ))}
+      <DataTableTh>Creado por</DataTableTh>
       <DataTableTh>Resultado</DataTableTh>
       <DataTableTh>Acción</DataTableTh>
     </tr>

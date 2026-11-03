@@ -210,6 +210,12 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
                           {formatearHoraCreacion(t.createdAt)}
                         </dd>
                       </div>
+                      <div className="col-span-2">
+                        <dt className="text-ink-muted">Creado por</dt>
+                        <dd className="font-medium text-ink">
+                          {t.creadoPor.etiqueta}
+                        </dd>
+                      </div>
                       <div>
                         <dt className="text-ink-muted">Resultado</dt>
                         <dd className="mt-0.5">
@@ -264,6 +270,9 @@ export default async function AdminTicketsPage({ searchParams }: Props) {
                           tone={persistido.tone}
                           label={persistido.label}
                         />
+                      </DataTableTd>
+                      <DataTableTd className="max-w-[10rem] truncate text-sm text-ink">
+                        {t.creadoPor.etiqueta}
                       </DataTableTd>
                       <DataTableTd>
                         <StatusBadge

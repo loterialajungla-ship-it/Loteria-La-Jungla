@@ -137,6 +137,38 @@ export default async function AdminTicketDetallePage({ params }: Props) {
               </dd>
             </div>
             <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">Creado por</dt>
+              <dd className="text-right font-semibold text-ink">
+                {ticket.creadoPor.etiqueta}
+              </dd>
+            </div>
+            {ticket.creadoPor.disponible ? (
+              <>
+                {ticket.creadoPor.nombre ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-muted">Nombre del creador</dt>
+                    <dd className="text-right font-medium text-ink">
+                      {ticket.creadoPor.nombre}
+                    </dd>
+                  </div>
+                ) : null}
+                {ticket.creadoPor.usuario ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-muted">Usuario de acceso</dt>
+                    <dd className="text-right font-mono text-sm font-medium text-ink">
+                      {ticket.creadoPor.usuario}
+                    </dd>
+                  </div>
+                ) : null}
+                {ticket.creadoPor.rol === "ADMIN" ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-muted">Rol al emitir</dt>
+                    <dd className="font-medium text-ink">Administrador</dd>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+            <div className="flex justify-between gap-3">
               <dt className="text-ink-muted">Total jugado</dt>
               <dd className="font-semibold tabular-nums text-ink">
                 ${ticket.totalApostado}
