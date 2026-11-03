@@ -22,7 +22,11 @@
     "bootstrap:admin:production": "tsx scripts/bootstrap-admin-production.ts",
     "ensure:test-admin": "tsx scripts/ensure-test-admin.ts",
     "credits:ensure-config": "tsx scripts/ensure-creditos-config.ts",
-    "seed:manual-test": "tsx scripts/seed-manual-test.ts"
+    "seed:manual-test": "tsx scripts/seed-manual-test.ts",
+    "reset-admin-password:production": "tsx scripts/reset-admin-password-production.ts",
+    "repair-animal-names:production": "tsx scripts/repair-animal-names-production.ts",
+    "repair-animal-names:test": "tsx scripts/repair-animal-names-test.ts",
+    "rename-admin-login:production": "tsx scripts/rename-admin-login-production.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

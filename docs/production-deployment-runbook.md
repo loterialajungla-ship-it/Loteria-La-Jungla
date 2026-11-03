@@ -28,7 +28,7 @@ build       → prisma generate && next build
 
 - `binaryTargets` Prisma incluyen `native` y `rhel-openssl-3.0.x` (adecuado a Vercel Linux).
 - `next.config.mjs` no añade pasos de seed/test.
-- **No** se ejecutan en build / postinstall / start: `seed:manual-test`, `test:integration`, `test:acceptance`, `dev:test`, `dev:test:lan`, `bootstrap:admin`, `bootstrap:admin:production`.
+- **No** se ejecutan en build / postinstall / start: `seed:manual-test`, `test:integration`, `test:acceptance`, `dev:test`, `dev:test:lan`, `bootstrap:admin`, `bootstrap:admin:production`, `reset-admin-password:production`, `repair-animal-names:production`, `rename-admin-login:production`.
 
 Variables **mínimas en el entorno de build/runtime** de Production:
 
@@ -186,6 +186,9 @@ Hay **dos** comandos distintos. No confundirlos.
 | --- | --- | --- |
 | `npm run bootstrap:admin` | Solo **dev-from-recovery** (`BOOTSTRAP_TARGET=dev-from-recovery`) | Desarrollo recuperado |
 | `npm run bootstrap:admin:production` | Solo **producción** (dual opt-in) | Primer ADMIN en prod |
+| `npm run reset-admin-password:production` | Solo **producción** (dual opt-in propio) | Restablecer contraseña de un ADMIN **ya existente** |
+| `npm run repair-animal-names:production` | Solo **producción** (dual opt-in propio) | Corregir solo `Animal.nombre` al catálogo canónico (incl. `20` = Cerdo) |
+| `npm run rename-admin-login:production` | Solo **producción** (dual opt-in propio) | Renombrar login del único ADMIN activo → `adminlajungla` |
 
 ### 6.1 Producción — `bootstrap:admin:production`
 
@@ -229,6 +232,87 @@ Después del primer ADMIN:
 ### 6.2 Dev-from-recovery — `bootstrap:admin`
 
 Solo con `BOOTSTRAP_TARGET=dev-from-recovery` y URLs del endpoint de desarrollo recuperado. Ver cabecera de `scripts/bootstrap-admin.ts`.
+
+### 6.3 Producción — `reset-admin-password:production`
+
+Cuando **ya existe** un ADMIN activo y hay que restablecer su contraseña (el bootstrap de producción **no** cambia hashes si el ADMIN ya existe):
+
+**Orden obligatorio:**
+
+1. Backup verificable de Neon/Postgres prod.  
+2. Confirmar el login objetivo en solo lectura (sin imprimir hashes).  
+3. Autorización humana explícita.  
+4. Ejecutar el reset con dual opt-in **propio** (no reutiliza `CONFIRM_PRODUCTION_BOOTSTRAP`).
+
+Variables temporales (solo shell / vault de operaciones; **no** fijarlas de forma permanente en Vercel; **retirar tras éxito**):
+
+- `ADMIN_PASSWORD_RESET_TARGET=production`  
+- `CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET=I_UNDERSTAND_THIS_RESETS_PRODUCTION_ADMIN_PASSWORD`  
+- `DATABASE_URL` / `DIRECT_URL` de **producción** (mismo endpoint allowlisted)  
+- `ADMIN_PASSWORD_RESET_USER` (login exacto del ADMIN; se normaliza como en `/login`)  
+- `ADMIN_PASSWORD_RESET_PASSWORD` (nueva contraseña; cumplir política mínima; **sin valor por defecto**)
+
+```bash
+npm run reset-admin-password:production
+```
+
+Comportamiento:
+
+- Dual opt-in + allowlist PRODUCTION; rechaza TEST, recovery y dev-recovery.  
+- Localiza exactamente un usuario con ese login, `rol=ADMIN` y `activo=true`; si no, aborta.  
+- Actualiza **solo** `passwordHash`; invalida `UsuarioSesion` de ese `usuarioId`; audita `RESET_PASSWORD` sin secretos.  
+- No crea usuarios; no cambia `usuario` / rol / activo / nombre / id.  
+- No acepta argumentos CLI (evita secretos en historial).  
+- No imprime password, hash ni URLs.
+
+**No** usar `ensure:test-admin`, `seed:manual-test` ni SQL manual para este fin.  
+Tras el éxito: probar `/login` → `/admin` y retirar las variables temporales de reset.
+
+### 6.4 Producción — `repair-animal-names:production`
+
+Cuando la tabla `Animal` tiene los **38 números canónicos** pero algunos `nombre` son genéricos (`Animal01`, …) u otros no canónicos:
+
+**Orden obligatorio:**
+
+1. Backup verificable de Neon/Postgres prod (§3).  
+2. Solo lectura: confirmar 38 filas y el set de números (sin faltantes/extras).  
+3. Autorización humana explícita.  
+4. Dual opt-in **propio** (no reutiliza confirmaciones de bootstrap ni reset ADMIN).
+
+Variables temporales (shell / vault; **no** permanentes en Vercel; **retirar tras éxito**):
+
+- `ANIMAL_NAMES_REPAIR_TARGET=production`  
+- `CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR=I_UNDERSTAND_THIS_REPAIRS_PRODUCTION_ANIMAL_NAMES`  
+- `DATABASE_URL` / `DIRECT_URL` de **producción** (allowlist)
+
+```bash
+npm run repair-animal-names:production
+```
+
+Comportamiento:
+
+- Abortar si el set de números no es exactamente el canónico (38).  
+- En una TX: actualizar **solo** `Animal.nombre` donde difiera; no create/delete/upsert; no tocar `imagen` ni otras tablas.  
+- Releer y exigir catálogo canónico completo antes de confirmar la TX.  
+- **No** usar `upsertCanonicalAnimals`, `prisma db seed` ni `seed:manual-test` para este fin.
+
+Verificación posterior (solo lectura): nombres en `/admin`; opcionalmente  
+`SELECT COUNT(*) FROM "Animal" WHERE nombre ~ '^Animal[0-9]{2}$'` → 0;  
+`SELECT nombre FROM "Animal" WHERE numero = '20'` → `Cerdo`.
+
+### 6.5 Producción — `rename-admin-login:production`
+
+Cambia solo `Usuario.usuario` del **único** ADMIN activo a `adminlajungla`. Conserva `id`, `passwordHash`, `rol`, `activo`, `nombre`.
+
+Variables: `RENAME_ADMIN_LOGIN_TARGET=production`,  
+`CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN=I_UNDERSTAND_THIS_RENAMES_PRODUCTION_ADMIN_LOGIN`,  
+URLs PRODUCTION, opcional `RENAME_ADMIN_LOGIN_NEW_USER=adminlajungla`.
+
+Aborta si no hay exactamente un ADMIN activo o si el login está ocupado.
+
+**Orden recomendado de ops C (tras backup):**  
+1) `repair-animal-names:production` → 2) `rename-admin-login:production` (si aplica).  
+El procedimiento destructivo `delete-non-admin-users:production` **no** forma parte de esta recuperación.
 
 ---
 
