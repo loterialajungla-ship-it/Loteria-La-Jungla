@@ -5,12 +5,14 @@ import {
   CONFIRM_PRODUCTION_ADMIN_PASSWORD_RESET_VALUE,
   CONFIRM_PRODUCTION_ANIMAL_NAMES_REPAIR_VALUE,
   CONFIRM_PRODUCTION_BOOTSTRAP_VALUE,
+  CONFIRM_PRODUCTION_ACTIVATE_CAJA_VALUE,
   CONFIRM_PRODUCTION_RENAME_ADMIN_LOGIN_VALUE,
   CONFIRM_TEST_ANIMAL_NAMES_REPAIR_VALUE,
   assertDevRecoveryBootstrapTarget,
   assertEndpointNotForbidden,
   assertIntegrationWriteTarget,
   assertPrismaSeedAllowed,
+  assertProductionActivateCajaTarget,
   assertProductionAdminPasswordResetTarget,
   assertProductionAnimalNamesRepairTarget,
   assertProductionBootstrapTarget,
@@ -758,6 +760,46 @@ describe("assertProductionRenameAdminLoginTarget", () => {
     );
     assert.equal(
       assertProductionRenameAdminLoginTarget(envOk()),
+      NEON_ENDPOINTS.PRODUCTION,
+    );
+  });
+});
+
+describe("assertProductionActivateCajaTarget", () => {
+  const envOk = () => ({
+    ACTIVATE_CAJA_TARGET: "production",
+    CONFIRM_PRODUCTION_ACTIVATE_CAJA: CONFIRM_PRODUCTION_ACTIVATE_CAJA_VALUE,
+    DATABASE_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION, { pooler: true }),
+    DIRECT_URL: neonUrl(NEON_ENDPOINTS.PRODUCTION),
+  });
+
+  it("aborta sin opt-in y rechaza confirmaciones ajenas", () => {
+    assert.throws(
+      () => assertProductionActivateCajaTarget({}),
+      /ACTIVATE_CAJA_TARGET/,
+    );
+    assert.throws(
+      () =>
+        assertProductionActivateCajaTarget({
+          ...envOk(),
+          CONFIRM_PRODUCTION_ACTIVATE_CAJA: CONFIRM_PRODUCTION_BOOTSTRAP_VALUE,
+        }),
+      /CONFIRM_PRODUCTION_ACTIVATE_CAJA/,
+    );
+  });
+
+  it("rechaza TEST; acepta PRODUCTION", () => {
+    assert.throws(
+      () =>
+        assertProductionActivateCajaTarget({
+          ...envOk(),
+          DATABASE_URL: neonUrl(NEON_ENDPOINTS.TEST),
+          DIRECT_URL: neonUrl(NEON_ENDPOINTS.TEST),
+        }),
+      /TEST|Activación de Caja/,
+    );
+    assert.equal(
+      assertProductionActivateCajaTarget(envOk()),
       NEON_ENDPOINTS.PRODUCTION,
     );
   });

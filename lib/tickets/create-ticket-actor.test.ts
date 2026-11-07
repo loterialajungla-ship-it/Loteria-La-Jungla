@@ -427,6 +427,12 @@ describe("H3 dominio: emisión ADMIN sin consumo de créditos", () => {
               return {};
             },
           },
+          // Caja inactiva / ausente → sin obligación (C3).
+          cajaConfig: {
+            async findUnique() {
+              return null;
+            },
+          },
         };
         return fn(tx);
       },

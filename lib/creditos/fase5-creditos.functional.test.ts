@@ -366,20 +366,32 @@ describe("Fase 5 — créditos funcionales TEST", { skip: !ENABLED }, () => {
     );
     rec("FIN-05", "PASS", "saldo insuficiente: sin ticket ni consumo extra");
 
-    await anularTicket(ctx.db, {
-      id: created.ticket.id,
-      motivo: "fase5 anula",
-      anuladoPorId: admin.id,
-      ahora: AHORA_VE_MANANA,
-    });
+    const { TicketAnulacionProhibidaError } = await import(
+      "@/lib/tickets/errors"
+    );
+    const saldoTrasConsumo = hist.cuenta!.saldoDisponible.toFixed(2);
+    await assert.rejects(
+      () =>
+        anularTicket(ctx.db, {
+          id: created.ticket.id,
+          motivo: "fase5 anula",
+          anuladoPorId: admin.id,
+          ahora: AHORA_VE_MANANA,
+        }),
+      TicketAnulacionProhibidaError,
+    );
     hist = await consultarSaldoYHistorial(ctx.credits, vendB.id);
-    assert.equal(hist.cuenta?.saldoDisponible.toFixed(2), "30.00");
+    assert.equal(hist.cuenta?.saldoDisponible.toFixed(2), saldoTrasConsumo);
     assert.equal(
       hist.movimientos.filter((m) => m.tipo === "DEVOLUCION_ANULACION").length,
-      1,
+      0,
     );
     await assertSaldoCoincideLibro(hist.cuenta!.saldoDisponible, hist.movimientos);
-    rec("FIN-06", "PASS", "anulación devolvió exactamente el consumo; saldo 30.00");
+    rec(
+      "FIN-06",
+      "PASS",
+      "C7.2: anulación rechazada; sin devolución; saldo inalterado",
+    );
   });
 
   it("F7-F8 idempotencia asignación y conflicto de clave", async () => {

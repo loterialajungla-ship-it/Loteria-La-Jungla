@@ -431,7 +431,10 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
     );
   });
 
-  it("anulación guarda anuladoPorId del admin", async () => {
+  it("C7.2: anularTicket rechaza y no muta el ticket", async () => {
+    const { TicketAnulacionProhibidaError } = await import(
+      "@/lib/tickets/errors"
+    );
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
     const created = await createTicket(
       {
@@ -445,21 +448,22 @@ describe("integración PostgreSQL — createTicket", { skip: !ENABLED }, () => {
     );
     trackOwnedTicketId(domain, created.ticket.id);
 
-    const anulado = await anularTicket(db, {
-      id: created.ticket.id,
-      motivo: "Error de digitación en prueba de integración",
-      anuladoPorId: admin.id,
-    });
-
-    assert.equal(anulado.estado, "ANULADO");
-    assert.equal(anulado.anuladoPorId, admin.id);
+    await assert.rejects(
+      () =>
+        anularTicket(db, {
+          id: created.ticket.id,
+          motivo: "Error de digitación en prueba de integración",
+          anuladoPorId: admin.id,
+        }),
+      TicketAnulacionProhibidaError,
+    );
 
     const row = await db.ticket.findUniqueOrThrow({
       where: { id: created.ticket.id },
     });
-    assert.equal(row.estado, "ANULADO");
-    assert.equal(row.anuladoPorId, admin.id);
-    assert.ok(row.anuladoAt);
+    assert.equal(row.estado, "EMITIDO");
+    assert.equal(row.anuladoPorId, null);
+    assert.equal(row.anuladoAt, null);
     const lineas = await db.ticketLinea.count({
       where: { ticketId: created.ticket.id },
     });

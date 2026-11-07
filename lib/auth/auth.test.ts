@@ -129,14 +129,16 @@ describe("permisos conceptuales ADMIN / VENDEDOR", () => {
   function canVenta(rol: string): boolean {
     return rol === "ADMIN" || rol === "VENDEDOR";
   }
+  /** C7.2: nadie puede anular tickets. */
   function canAnular(rol: string): boolean {
-    return rol === "ADMIN";
+    void rol;
+    return false;
   }
 
-  it("ADMIN autorizado en admin y venta", () => {
+  it("ADMIN autorizado en admin y venta; no puede anular", () => {
     assert.equal(canAccessAdmin("ADMIN"), true);
     assert.equal(canVenta("ADMIN"), true);
-    assert.equal(canAnular("ADMIN"), true);
+    assert.equal(canAnular("ADMIN"), false);
   });
 
   it("VENDEDOR autorizado venta; rechazado admin/anular", () => {

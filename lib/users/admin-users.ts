@@ -1,6 +1,7 @@
 import type { PrismaClient, RolUsuario } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { ensureComisionInicialSiAusente } from "@/lib/caja/comision";
 import {
   UserConflictError,
   UserNotFoundError,
@@ -21,7 +22,13 @@ import {
 
 type Db = Pick<
   PrismaClient,
-  "usuario" | "usuarioSesion" | "auditoria" | "$transaction"
+  | "usuario"
+  | "usuarioSesion"
+  | "auditoria"
+  | "cajaConfig"
+  | "vendedorComision"
+  | "vendedorComisionHistorial"
+  | "$transaction"
 >;
 
 export const ADMIN_USERS_PAGE_SIZE_DEFAULT = 20;
@@ -272,6 +279,18 @@ export async function createVendor(
             usuario: row.usuario,
             rol: row.rol,
           },
+        });
+      }
+
+      // Caja: si ya está activa, asignar 20 % en la misma TX (no activa Caja).
+      // Antes de activar Caja no se crea comisión aquí (lo hará activarCaja).
+      const caja = await tx.cajaConfig.findUnique({ where: { id: 1 } });
+      if (caja?.activa) {
+        await ensureComisionInicialSiAusente(tx, {
+          vendedorId: row.id,
+          actorAdminId: actorUserId,
+          motivo: "Alta inicial al crear vendedor (Caja activa, 20 %)",
+          validarVendedor: false,
         });
       }
 

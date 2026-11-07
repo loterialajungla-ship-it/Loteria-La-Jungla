@@ -393,8 +393,8 @@ Objetivo: validar el flujo sin volumen real.
 6. Abrir/escanear QR → `/ticket/[codigoPublico]` en el **dominio de producción** (`window.location.origin`).  
 7. Confirmar datos jugados; sin 30×/exposición en el PNG.
 
-**No** anular en masa ni cargar importes altos “por probar”.  
-Si el ticket de prueba debe anularse: solo ADMIN, con motivo claro (`PRUEBA DEPLOY` + fecha), consciente de que queda en auditoría y no entra en exposición.
+**No** anular tickets (C7.2: anulaciones y devoluciones prohibidas).  
+**No** cargar importes altos “por probar”.
 
 ---
 
@@ -423,7 +423,7 @@ Si el ticket de prueba debe anularse: solo ADMIN, con motivo claro (`PRUEBA DEPL
 - Solo ADMIN; no DELETE físico.  
 - Estado `ANULADO` + motivo + `anuladoPorId`.  
 - Queda fuera de exposición y ventas activas de reportes.  
-- En post-deploy: anular solo el ticket de prueba si se creó uno y la operación lo permite.
+- En post-deploy: no anular tickets (política C7.2). Ver `docs/caja-activation-runbook.md` para Caja.
 
 ---
 
@@ -533,3 +533,5 @@ Tras comprobar login nuevo, sesiones y roles en Production:
 - Cambiar DNS, dominio o settings de Vercel desde esta tarea  
 
 Cuando se ejecute el despliegue real, seguir este documento paso a paso.
+
+**Caja:** ver `docs/caja-activation-runbook.md` y `docs/caja-deploy-isolation-inventory.md`. No activar Caja en este runbook genérico.

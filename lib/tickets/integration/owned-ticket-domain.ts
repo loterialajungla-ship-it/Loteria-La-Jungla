@@ -140,6 +140,9 @@ function auditoriaOwned(
   if (a.entidad === "RESULTADO" && domain.resultadoIds.has(a.entidadId)) {
     return true;
   }
+  if (a.entidad === "VENDEDOR_COMISION" && domain.userIds.has(a.entidadId)) {
+    return true;
+  }
   return false;
 }
 
@@ -251,6 +254,12 @@ export async function cleanupOwnedTicketDomain(
   if (resultadoList.length > 0) {
     auditOr.push({ entidad: "RESULTADO", entidadId: { in: resultadoList } });
   }
+  if (userList.length > 0) {
+    auditOr.push({
+      entidad: "VENDEDOR_COMISION",
+      entidadId: { in: userList },
+    });
+  }
   if (auditOr.length > 0) {
     const audits = await db.auditoria.findMany({
       where: { OR: auditOr },
@@ -292,6 +301,133 @@ export async function cleanupOwnedTicketDomain(
   let deletedResultados = 0;
   let deletedUsers = 0;
   let deletedTicketCounters = 0;
+
+  // CajaConfig.activadaPorAdminId Restrict → soltar FK si apunta a owned.
+  // (Delegates opcionales: unit mocks antiguos sin Caja.)
+  if (db.cajaConfig?.findUnique && db.cajaConfig?.update) {
+    const cajaCfg = await db.cajaConfig.findUnique({
+      where: { id: 1 },
+      select: { activadaPorAdminId: true },
+    });
+    if (
+      cajaCfg?.activadaPorAdminId &&
+      domain.userIds.has(cajaCfg.activadaPorAdminId)
+    ) {
+      await db.cajaConfig.update({
+        where: { id: 1 },
+        data: { activadaPorAdminId: null },
+      });
+    }
+  }
+
+  // Caja C4/C5: aplicaciones → confirmaciones → declaraciones antes de Usuario.
+  if (userList.length > 0 && db.cajaDeclaracion?.findMany) {
+    const decls = await db.cajaDeclaracion.findMany({
+      where: { vendedorId: { in: userList } },
+      select: { id: true, vendedorId: true },
+    });
+    const declIds = decls
+      .filter((d: { vendedorId: string }) => domain.userIds.has(d.vendedorId))
+      .map((d: { id: string }) => d.id);
+    if (declIds.length > 0) {
+      if (db.cajaConfirmacion?.findMany && db.cajaConfirmacion?.deleteMany) {
+        const confs = await db.cajaConfirmacion.findMany({
+          where: { declaracionId: { in: declIds } },
+          select: { id: true },
+        });
+        const confIds = confs.map((c: { id: string }) => c.id);
+        if (confIds.length > 0) {
+          if (db.cajaAplicacion?.deleteMany) {
+            await db.cajaAplicacion.deleteMany({
+              where: { confirmacionId: { in: confIds } },
+            });
+          }
+          const confAudits = await db.auditoria.findMany({
+            where: {
+              entidad: "CAJA_CONFIRMACION",
+              entidadId: { in: confIds },
+            },
+            select: { id: true },
+          });
+          for (const a of confAudits) auditoriaIds.push(a.id);
+          await db.cajaConfirmacion.deleteMany({
+            where: { id: { in: confIds } },
+          });
+        }
+      }
+      // Aplicaciones huérfanas por vendedor (defensa).
+      if (db.cajaAplicacion?.deleteMany) {
+        await db.cajaAplicacion.deleteMany({
+          where: { vendedorId: { in: userList } },
+        });
+      }
+      const declAudits = await db.auditoria.findMany({
+        where: {
+          entidad: "CAJA_DECLARACION",
+          entidadId: { in: declIds },
+        },
+        select: { id: true },
+      });
+      for (const a of declAudits) auditoriaIds.push(a.id);
+      if (db.cajaDeclaracion?.deleteMany) {
+        await db.cajaDeclaracion.deleteMany({
+          where: { id: { in: declIds } },
+        });
+      }
+    }
+  }
+
+  // Caja: obligaciones Restrict sobre Ticket/Usuario → borrar antes.
+  // Solo filas owned (ticket o vendedor del registry).
+  if (db.cajaObligacion?.findMany && db.cajaObligacion?.deleteMany) {
+    const obligWhere: Array<Record<string, unknown>> = [];
+    if (ticketList.length > 0) {
+      obligWhere.push({ ticketId: { in: ticketList } });
+    }
+    if (userList.length > 0) {
+      obligWhere.push({ vendedorId: { in: userList } });
+    }
+    if (obligWhere.length > 0) {
+      const obligs = await db.cajaObligacion.findMany({
+        where: { OR: obligWhere },
+        select: { id: true, ticketId: true, vendedorId: true },
+      });
+      const obligIds = obligs
+        .filter(
+          (o) =>
+            domain.ticketIds.has(o.ticketId) ||
+            domain.userIds.has(o.vendedorId),
+        )
+        .map((o) => o.id);
+      if (obligIds.length > 0) {
+        const obligAudits = await db.auditoria.findMany({
+          where: {
+            entidad: "CAJA_OBLIGACION",
+            entidadId: { in: obligIds },
+          },
+          select: { id: true },
+        });
+        for (const a of obligAudits) auditoriaIds.push(a.id);
+        await db.cajaObligacion.deleteMany({
+          where: { id: { in: obligIds } },
+        });
+      }
+    }
+  }
+
+  // Comisiones Caja del vendedor owned (antes de borrar Usuario).
+  if (userList.length > 0) {
+    if (db.vendedorComisionHistorial?.deleteMany) {
+      await db.vendedorComisionHistorial.deleteMany({
+        where: { vendedorId: { in: userList } },
+      });
+    }
+    if (db.vendedorComision?.deleteMany) {
+      await db.vendedorComision.deleteMany({
+        where: { vendedorId: { in: userList } },
+      });
+    }
+  }
 
   const movArr = unique(movimientoIds);
   if (movArr.length > 0) {

@@ -200,6 +200,25 @@ model Usuario {
   /// Movimientos de crédito en los que este usuario actuó como ADMIN.
   creditoMovimientosComoActor CreditoMovimiento[] @relation("CreditoMovimientoActorAdmin")
 
+  /// Comisión vigente de Caja (1:1). Ausente hasta activación o alta post-Caja.
+  comisionVendedor VendedorComision? @relation("VendedorComisionVendedor")
+
+  comisionesActualizadas VendedorComision[] @relation("VendedorComisionUpdatedBy")
+
+  comisionHistorial VendedorComisionHistorial[] @relation("VendedorComisionHistorialVendedor")
+
+  comisionHistorialComoActor VendedorComisionHistorial[] @relation("VendedorComisionHistorialChangedBy")
+
+  cajaActivaciones CajaConfig[] @relation("CajaActivadaPor")
+
+  cajaObligaciones CajaObligacion[] @relation("CajaObligacionVendedor")
+
+  cajaDeclaraciones CajaDeclaracion[] @relation("CajaDeclaracionVendedor")
+
+  cajaConfirmacionesComoAdmin CajaConfirmacion[] @relation("CajaConfirmacionAdmin")
+
+  cajaAplicaciones CajaAplicacion[] @relation("CajaAplicacionVendedor")
+
   @@index([rol, activo])
 
 }
@@ -270,6 +289,24 @@ enum AccionAuditoria {
   /// Cancelación de una programación aún PENDIENTE.
   CANCELAR_PROGRAMACION
 
+  /// Activación del módulo Caja (singleton).
+  ACTIVAR_CAJA
+
+  /// Alta inicial de comisión de un vendedor.
+  CREAR_COMISION_VENDEDOR
+
+  /// Cambio del porcentaje de comisión vigente.
+  CAMBIAR_COMISION_VENDEDOR
+
+  /// Obligación de Caja creada al emitir un ticket elegible.
+  CREAR_CAJA_OBLIGACION
+
+  /// Declaración de entrega de efectivo (vendedor → ADMIN).
+  CREAR_CAJA_DECLARACION
+
+  /// Confirmación de recepción de efectivo por ADMIN.
+  CREAR_CAJA_CONFIRMACION
+
 }
 
 
@@ -286,6 +323,21 @@ enum EntidadAuditoria {
 
   /// Selección admin previa a publicación (ResultadoProgramado).
   RESULTADO_PROGRAMADO
+
+  /// Configuración singleton de Caja.
+  CAJA_CONFIG
+
+  /// Comisión vigente / historial de un vendedor.
+  VENDEDOR_COMISION
+
+  /// Obligación de entrega de Caja ligada a un ticket.
+  CAJA_OBLIGACION
+
+  /// Declaración de entrega de Caja.
+  CAJA_DECLARACION
+
+  /// Confirmación de recepción de Caja.
+  CAJA_CONFIRMACION
 
 }
 
@@ -381,6 +433,9 @@ model Ticket {
 
   /// Movimientos de crédito ligados a este ticket (consumo / devolución).
   creditoMovimientos CreditoMovimiento[]
+
+  /// Obligación de Caja (0..1). Solo tickets elegibles post-activación.
+  cajaObligacion CajaObligacion?
 
   @@index([fechaJuego])
 
@@ -515,5 +570,163 @@ model CreditosConfig {
 
   updatedAt        DateTime @updatedAt
   updatedByAdminId String?
+}
+
+
+
+/// Configuración singleton del módulo Caja (id fijo = 1).
+/// Independiente de créditos. activa=false hasta activación ADMIN explícita.
+/// activadaEn: corte para obligaciones futuras (C3+); no se reinicia al re-invocar activar.
+model CajaConfig {
+  id Int @id @default(1)
+
+  activa Boolean @default(false)
+
+  /// Instante absoluto UTC de la primera activación.
+  activadaEn DateTime?
+
+  activadaPorAdminId String?
+  activadaPorAdmin   Usuario? @relation("CajaActivadaPor", fields: [activadaPorAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  updatedAt DateTime @updatedAt
+}
+
+
+
+/// Comisión vigente de Caja por vendedor (1:1). Independiente del límite de créditos.
+model VendedorComision {
+  vendedorId String  @id
+  vendedor   Usuario @relation("VendedorComisionVendedor", fields: [vendedorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Porcentaje 0–100. Decimal(5,2).
+  porcentaje Decimal @db.Decimal(5, 2)
+
+  updatedAt        DateTime @updatedAt
+  updatedByAdminId String?
+  updatedByAdmin   Usuario? @relation("VendedorComisionUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+}
+
+
+
+/// Historial inmutable de cambios de comisión (solo inserts desde servicios).
+model VendedorComisionHistorial {
+  id String @id @default(cuid())
+
+  vendedorId String
+  vendedor   Usuario @relation("VendedorComisionHistorialVendedor", fields: [vendedorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Null en alta inicial.
+  porcentajeAnterior Decimal? @db.Decimal(5, 2)
+  porcentajeNuevo    Decimal  @db.Decimal(5, 2)
+
+  changedAt        DateTime @default(now())
+  changedByAdminId String?
+  changedByAdmin   Usuario? @relation("VendedorComisionHistorialChangedBy", fields: [changedByAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  motivo String?
+
+  @@index([vendedorId, changedAt])
+}
+
+
+
+/// Obligación de Caja por ticket elegible (1:1). Snapshot inmutable de comisión.
+/// Independiente de créditos. No se genera para ventas ADMIN sin atribución.
+model CajaObligacion {
+  id String @id @default(cuid())
+
+  ticketId String @unique
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  vendedorId String
+  vendedor   Usuario @relation("CajaObligacionVendedor", fields: [vendedorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  bruto              Decimal @db.Decimal(12, 2)
+  comisionPorcentaje Decimal @db.Decimal(5, 2)
+  comisionImporte    Decimal @db.Decimal(12, 2)
+  importeAdmin       Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+
+  aplicaciones CajaAplicacion[]
+
+  @@index([vendedorId, createdAt, ticketId])
+}
+
+
+
+/// Declaración de entrega de efectivo del vendedor a ADMIN.
+/// Inmutable; el estado PENDIENTE/PARCIAL/CONFIRMADA se deriva de confirmaciones.
+model CajaDeclaracion {
+  id String @id @default(cuid())
+
+  vendedorId String
+  vendedor   Usuario @relation("CajaDeclaracionVendedor", fields: [vendedorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  importeDeclarado Decimal @db.Decimal(12, 2)
+
+  declaradoAt DateTime @default(now())
+
+  idempotencyKey         String  @unique
+  idempotencyRequestHash String?
+
+  nota String?
+
+  confirmaciones CajaConfirmacion[]
+
+  @@index([vendedorId, declaradoAt])
+}
+
+
+
+/// Confirmación de recepción de efectivo por ADMIN sobre una declaración.
+/// Inmutable. Varias confirmaciones parciales por declaración.
+model CajaConfirmacion {
+  id String @id @default(cuid())
+
+  declaracionId String
+  declaracion   CajaDeclaracion @relation(fields: [declaracionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  importeConfirmado Decimal @db.Decimal(12, 2)
+
+  confirmadoPorAdminId String
+  confirmadoPorAdmin   Usuario @relation("CajaConfirmacionAdmin", fields: [confirmadoPorAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  confirmadoAt DateTime @default(now())
+
+  idempotencyKey         String  @unique
+  idempotencyRequestHash String?
+
+  aplicaciones CajaAplicacion[]
+
+  @@index([declaracionId, confirmadoAt])
+  @@index([confirmadoPorAdminId, confirmadoAt])
+}
+
+
+
+/// Aplicación FIFO inmutable de una confirmación sobre una obligación.
+/// Una confirmación × obligación como máximo una fila; varias confirmaciones por obligación.
+model CajaAplicacion {
+  id String @id @default(cuid())
+
+  confirmacionId String
+  confirmacion   CajaConfirmacion @relation(fields: [confirmacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  obligacionId String
+  obligacion   CajaObligacion @relation(fields: [obligacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  /// Denormalizado: debe coincidir con declaración de la confirmación y con la obligación (trigger PG).
+  vendedorId String
+  vendedor   Usuario @relation("CajaAplicacionVendedor", fields: [vendedorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  importeAplicado Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+
+  @@unique([confirmacionId, obligacionId])
+  @@index([obligacionId, createdAt])
+  @@index([confirmacionId, createdAt])
+  @@index([vendedorId, createdAt])
 }
 

@@ -55,7 +55,8 @@ export async function GET(request: Request) {
 /**
  * POST /api/venta/tickets
  * AUTH NUEVA: ADMIN | VENDEDOR.
- * vendedorId = usuario autenticado (ignora body).
+ * Emisor = usuario autenticado. Body.vendedorId solo como atribución ADMIN
+ * (revalidado en createTicket); VENDEDOR no puede atribuir a otro.
  */
 export async function POST(request: Request) {
   let actor;
@@ -84,10 +85,17 @@ export async function POST(request: Request) {
       {
         ...input,
         vendedorId: actor.userId,
+        atribuidoAVendedorId:
+          actor.user.rol === "ADMIN" ? input.atribuidoAVendedorId : null,
       },
       new Date(),
       prisma,
-      { actorRol: actor.user.rol },
+      {
+        actorRol: actor.user.rol,
+        actorUserId: actor.userId,
+        atribuidoAVendedorId:
+          actor.user.rol === "ADMIN" ? input.atribuidoAVendedorId : null,
+      },
     );
     const status = result.idempotentReplay ? 200 : 201;
     return NextResponse.json(

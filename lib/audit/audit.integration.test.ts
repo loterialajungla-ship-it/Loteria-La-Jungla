@@ -148,7 +148,10 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
     assert.ok(ev);
   });
 
-  it("crear y anular ticket → Auditoria; relaciones Usuario", async () => {
+  it("crear ticket → Auditoria; anularTicket C7.2 no escribe ANULAR", async () => {
+    const { TicketAnulacionProhibidaError } = await import(
+      "@/lib/tickets/errors"
+    );
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
     const created = await createTicket(
       {
@@ -172,17 +175,23 @@ describe("integración PostgreSQL — auditoría", { skip: !ENABLED }, () => {
     assert.equal(crearEv!.usuario!.id, vendorId);
     assert.doesNotMatch(crearEv!.detalle ?? "", /idempotency/i);
 
-    await anularTicket(db, {
-      id: created.ticket.id,
-      motivo: "Error de digitación",
-      anuladoPorId: adminId,
-    });
+    await assert.rejects(
+      () =>
+        anularTicket(db, {
+          id: created.ticket.id,
+          motivo: "Error de digitación",
+          anuladoPorId: adminId,
+        }),
+      TicketAnulacionProhibidaError,
+    );
     const anularEv = await db.auditoria.findFirst({
       where: { accion: "ANULAR_TICKET", entidadId: created.ticket.id },
     });
-    assert.ok(anularEv);
-    assert.equal(anularEv!.usuarioId, adminId);
-    assert.match(anularEv!.detalle ?? "", /Error de digitación/);
+    assert.equal(anularEv, null);
+    const row = await db.ticket.findUniqueOrThrow({
+      where: { id: created.ticket.id },
+    });
+    assert.equal(row.estado, "EMITIDO");
   });
 
   it("crear y modificar resultado → CREAR / MODIFICAR con 03→05", async () => {

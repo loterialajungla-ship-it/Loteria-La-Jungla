@@ -12,6 +12,7 @@ export const ADMIN_NAV: NavItem[] = [
   { href: "/admin", label: "Resultados", match: "exact" },
   { href: "/admin/tickets", label: "Tickets", match: "prefix" },
   { href: "/admin/creditos", label: "Créditos", match: "prefix" },
+  { href: "/admin/caja", label: "Caja", match: "prefix" },
   { href: "/admin/usuarios", label: "Usuarios", match: "prefix" },
   { href: "/admin/reportes", label: "Informes", match: "prefix" },
   { href: "/admin/auditoria", label: "Auditoría", match: "prefix" },
@@ -23,6 +24,7 @@ export const ADMIN_NAV: NavItem[] = [
 export const VENDOR_NAV: NavItem[] = [
   { href: "/venta", label: "Venta", match: "exact" },
   { href: "/venta/tickets", label: "Mis tickets", match: "prefix" },
+  { href: "/venta/caja", label: "Mi Caja", match: "prefix" },
   { href: "/perfil", label: "Mi cuenta", match: "exact" },
 ];
 

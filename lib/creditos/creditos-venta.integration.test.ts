@@ -206,8 +206,11 @@ describe(
       );
     });
 
-    it("venta + consumo + anulación + devolución atómicas e idempotentes", async (t) => {
+    it("venta + consumo; C7.2 anulación prohibida sin devolución", async (t) => {
       if (!requireCtx(t)) return;
+      const { TicketAnulacionProhibidaError } = await import(
+        "@/lib/tickets/errors"
+      );
       await asignarCreditos(ctx.credits, {
         vendedorId: vendedor.id,
         importe: "50.00",
@@ -256,46 +259,36 @@ describe(
       );
       assertSaldoCoincideLibro(hist.cuenta!.saldoDisponible, hist.movimientos);
 
-      await anularTicket(
-        ctx.db,
-        {
-          id: created.ticket.id,
-          motivo: "prueba créditos aislada",
-          anuladoPorId: admin.id,
-          ahora: ctx.ahora,
-        },
-        {
-          bindCreditsStore: ctx.bindCreditsWithVirtualConfig(
-            ctx.virtualControlOn,
+      await assert.rejects(
+        () =>
+          anularTicket(
+            ctx.db,
+            {
+              id: created.ticket.id,
+              motivo: "prueba créditos aislada",
+              anuladoPorId: admin.id,
+              ahora: ctx.ahora,
+            },
+            {
+              bindCreditsStore: ctx.bindCreditsWithVirtualConfig(
+                ctx.virtualControlOn,
+              ),
+            },
           ),
-        },
-      );
-      await ctx.refreshOwnedTicketArtifacts(created.ticket.id);
-      await ctx.refreshOwnedMovimientosForVendedor(vendedor.id);
-
-      await assert.rejects(() =>
-        anularTicket(
-          ctx.db,
-          {
-            id: created.ticket.id,
-            motivo: "reintento",
-            anuladoPorId: admin.id,
-          },
-          {
-            bindCreditsStore: ctx.bindCreditsWithVirtualConfig(
-              ctx.virtualControlOn,
-            ),
-          },
-        ),
+        TicketAnulacionProhibidaError,
       );
 
       hist = await consultarSaldoYHistorial(ctx.credits, vendedor.id);
-      assert.equal(hist.cuenta?.saldoDisponible.toFixed(2), "50.00");
+      assert.equal(hist.cuenta?.saldoDisponible.toFixed(2), "40.00");
       assert.equal(
         hist.movimientos.filter((m) => m.tipo === "DEVOLUCION_ANULACION")
           .length,
-        1,
+        0,
       );
+      const ticket = await ctx.db.ticket.findUnique({
+        where: { id: created.ticket.id },
+      });
+      assert.equal(ticket?.estado, "EMITIDO");
       assertSaldoCoincideLibro(hist.cuenta!.saldoDisponible, hist.movimientos);
     });
 
@@ -564,8 +557,11 @@ describe(
       );
     });
 
-    it("fallo al insertar DEVOLUCION revierte anulación", async (t) => {
+    it("C7.2: anularTicket no llega a devolver créditos aunque el store falle", async (t) => {
       if (!requireCtx(t)) return;
+      const { TicketAnulacionProhibidaError } = await import(
+        "@/lib/tickets/errors"
+      );
       await asignarCreditos(ctx.credits, {
         vendedorId: vendedor.id,
         importe: "20.00",
@@ -596,7 +592,7 @@ describe(
                 ),
             },
           ),
-        /forced-fail:DEVOLUCION_ANULACION/,
+        TicketAnulacionProhibidaError,
       );
 
       const ticket = await ctx.db.ticket.findUnique({
@@ -615,8 +611,11 @@ describe(
       );
     });
 
-    it("corrección sobre CONSUMO se rechaza; anulación posterior reembolsa íntegro", async (t) => {
+    it("corrección sobre CONSUMO se rechaza; anulación también prohibida", async (t) => {
       if (!requireCtx(t)) return;
+      const { TicketAnulacionProhibidaError } = await import(
+        "@/lib/tickets/errors"
+      );
       await asignarCreditos(ctx.credits, {
         vendedorId: vendedor.id,
         importe: "50.00",
@@ -666,59 +665,42 @@ describe(
         histTrasRechazo.cuenta?.saldoDisponible.toFixed(2),
         histAntes.cuenta?.saldoDisponible.toFixed(2),
       );
-      assert.equal(
-        histTrasRechazo.movimientos.filter(
-          (m) =>
-            m.tipo === "CORRECCION" && m.movimientoOrigenId === consumo.id,
-        ).length,
-        0,
-      );
 
-      const anulado = await anularTicket(
-        ctx.db,
-        {
-          id: created.ticket.id,
-          motivo: "anulacion tras correccion rechazada",
-          anuladoPorId: admin.id,
-          ahora: ctx.ahora,
-        },
-        {
-          bindCreditsStore: ctx.bindCreditsWithVirtualConfig(
-            ctx.virtualControlOn,
+      await assert.rejects(
+        () =>
+          anularTicket(
+            ctx.db,
+            {
+              id: created.ticket.id,
+              motivo: "anulacion tras correccion rechazada",
+              anuladoPorId: admin.id,
+              ahora: ctx.ahora,
+            },
+            {
+              bindCreditsStore: ctx.bindCreditsWithVirtualConfig(
+                ctx.virtualControlOn,
+              ),
+            },
           ),
-        },
+        TicketAnulacionProhibidaError,
       );
-      assert.equal(anulado.id, created.ticket.id);
-      assert.equal(anulado.estado, "ANULADO");
-      await ctx.refreshOwnedTicketArtifacts(created.ticket.id);
-      await ctx.refreshOwnedMovimientosForVendedor(vendedor.id);
 
       const ticketDb = await ctx.db.ticket.findUnique({
         where: { id: created.ticket.id },
         select: { id: true, estado: true },
       });
-      assert.equal(ticketDb?.estado, "ANULADO");
+      assert.equal(ticketDb?.estado, "EMITIDO");
 
       const histFinal = await consultarSaldoYHistorial(ctx.credits, vendedor.id);
-      const movsDelTicket = histFinal.movimientos.filter(
-        (m) => m.ticketId === created.ticket.id,
-      );
       assert.equal(
-        movsDelTicket.filter((m) => m.tipo === "CONSUMO_VENTA").length,
-        1,
-      );
-      assert.equal(
-        movsDelTicket.filter((m) => m.tipo === "DEVOLUCION_ANULACION").length,
-        1,
-      );
-      assert.equal(
-        histFinal.movimientos.filter(
-          (m) =>
-            m.tipo === "CORRECCION" && m.movimientoOrigenId === consumo.id,
-        ).length,
+        histFinal.movimientos.filter((m) => m.tipo === "DEVOLUCION_ANULACION")
+          .length,
         0,
       );
-      assert.equal(histFinal.cuenta?.saldoDisponible.toFixed(2), saldoInicial);
+      assert.equal(
+        histFinal.cuenta?.saldoDisponible.toFixed(2),
+        histAntes.cuenta?.saldoDisponible.toFixed(2),
+      );
       assertSaldoCoincideLibro(
         histFinal.cuenta!.saldoDisponible,
         histFinal.movimientos,

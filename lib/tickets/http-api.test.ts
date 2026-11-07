@@ -8,6 +8,7 @@ import {
   InvalidAnulacionMotivoError,
   InvalidGameDateError,
   TicketAlreadyAnuladoError,
+  TicketAnulacionProhibidaError,
   TicketNotFoundError,
   TicketValidationError,
 } from "@/lib/tickets/errors";
@@ -98,6 +99,12 @@ describe("mapTicketErrorToHttp", () => {
   it("mapea TicketAlreadyAnuladoError a 409", () => {
     const mapped = mapTicketErrorToHttp(new TicketAlreadyAnuladoError());
     assert.equal(mapped.status, 409);
+  });
+
+  it("mapea TicketAnulacionProhibidaError a 403", () => {
+    const mapped = mapTicketErrorToHttp(new TicketAnulacionProhibidaError());
+    assert.equal(mapped.status, 403);
+    assert.equal(mapped.body.error.code, "TICKET_ANULACION_PROHIBIDA");
   });
 
   it("mapea IdempotencyConflictError a 409", () => {

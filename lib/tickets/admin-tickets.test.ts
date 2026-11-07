@@ -10,6 +10,7 @@ import {
 import {
   InvalidAnulacionMotivoError,
   TicketAlreadyAnuladoError,
+  TicketAnulacionProhibidaError,
   TicketNotFoundError,
   TicketValidationError,
 } from "@/lib/tickets/errors";
@@ -109,10 +110,16 @@ describe("mapTicketErrorToHttp — admin tickets", () => {
     assert.equal(m.body.error.code, "TICKET_NOT_FOUND");
   });
 
-  it("TicketAlreadyAnuladoError → 409", () => {
+  it("TicketAlreadyAnuladoError → 409 (histórico)", () => {
     const m = mapTicketErrorToHttp(new TicketAlreadyAnuladoError());
     assert.equal(m.status, 409);
     assert.equal(m.body.error.code, "ALREADY_ANULADO");
+  });
+
+  it("TicketAnulacionProhibidaError → 403", () => {
+    const m = mapTicketErrorToHttp(new TicketAnulacionProhibidaError());
+    assert.equal(m.status, 403);
+    assert.equal(m.body.error.code, "TICKET_ANULACION_PROHIBIDA");
   });
 
   it("motivo vacío → 400", () => {
@@ -196,46 +203,29 @@ describe("anulación: liquidación y exposición", () => {
 });
 
 /**
- * Simula la lógica condicional de anularTicket (updateMany count).
- * Integración real con DB: pendiente de harness; esta prueba cubre la regla.
+ * C7.2: anularTicket ya no muta. Se conserva el mapeo histórico ALREADY_ANULADO
+ * para tickets ANULADO preexistentes en lectura/UI.
  */
-describe("carreras de anulación (regla condicional)", () => {
-  it("solo el primer updateMany con estado=EMITIDO gana; el segundo no sobrescribe", () => {
-    type TicketStub = {
-      id: string;
-      estado: "EMITIDO" | "ANULADO";
-      anuladoAt: string | null;
-      motivoAnulacion: string | null;
-      anuladoPorId: null;
-    };
-
-    const store: TicketStub = {
-      id: "t1",
-      estado: "EMITIDO",
-      anuladoAt: null,
-      motivoAnulacion: null,
-      anuladoPorId: null,
-    };
-
-    function tryAnular(motivo: string, at: string): number {
-      if (store.estado !== "EMITIDO") return 0;
-      store.estado = "ANULADO";
-      store.anuladoAt = at;
-      store.motivoAnulacion = motivo;
-      store.anuladoPorId = null;
-      return 1;
-    }
-
-    const first = tryAnular("Error de digitación", "2026-10-01T12:00:00.000Z");
-    const second = tryAnular("Otro motivo", "2026-10-01T12:00:01.000Z");
-
-    assert.equal(first, 1);
-    assert.equal(second, 0);
-    assert.equal(store.motivoAnulacion, "Error de digitación");
-    assert.equal(store.anuladoAt, "2026-10-01T12:00:00.000Z");
+describe("anulación prohibida (C7.2)", () => {
+  it("cualquier intento de anular se mapea a 403", async () => {
+    const { anularTicket } = await import("@/lib/tickets/anular-ticket");
+    await assert.rejects(
+      () =>
+        anularTicket({} as never, {
+          id: "t1",
+          motivo: "Error de digitación",
+          anuladoPorId: "admin",
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof TicketAnulacionProhibidaError);
+        const m = mapTicketErrorToHttp(err);
+        assert.equal(m.status, 403);
+        return true;
+      },
+    );
   });
 
-  it("segundo intento debe mapearse a 409 ALREADY_ANULADO", () => {
+  it("ALREADY_ANULADO sigue mapeando 409 (estado histórico)", () => {
     const m = mapTicketErrorToHttp(new TicketAlreadyAnuladoError());
     assert.equal(m.status, 409);
   });
