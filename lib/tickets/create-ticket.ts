@@ -1,6 +1,10 @@
 import { Prisma, type PrismaClient, type RolUsuario } from "@prisma/client";
 import { fechaAYYYYMMDD } from "@/lib/fecha";
 import { recordAuditEvent } from "@/lib/audit/audit";
+import {
+  assertVendedorElegibleParaAtribucion,
+  maybeCreateCajaObligacionEnTx,
+} from "@/lib/caja/obligacion";
 import { consumirCreditosTrasEmitirTicket } from "@/lib/creditos/aplicar-en-venta";
 import { createPrismaCreditosStore } from "@/lib/creditos/prisma-store";
 import type { CreditosStore } from "@/lib/creditos/store";
@@ -172,6 +176,17 @@ export type CreateTicketOptions = {
    */
   actorRol?: RolUsuario;
   /**
+   * Id del usuario autenticado (sesión). Si se omite, se usa `input.vendedorId`
+   * (compatibilidad con tests existentes).
+   */
+  actorUserId?: string;
+  /**
+   * Solo ADMIN: atribución explícita a un VENDEDOR activo.
+   * VENDEDOR no puede atribuir a otro; si se pasa distinto de sí mismo → rechazo.
+   * No consume créditos del vendedor atribuido.
+   */
+  atribuidoAVendedorId?: string | null;
+  /**
    * Inyectable para unit tests. Por defecto: adaptador Prisma sobre la TX.
    */
   bindCreditsStore?: (tx: Prisma.TransactionClient) => CreditosStore;
@@ -181,6 +196,16 @@ export type CreateTicketOptions = {
    * de concurrencia sin sleep arbitrario. No usar en rutas HTTP.
    */
   afterEmisorLocked?: () => Promise<void>;
+  /**
+   * Solo pruebas (integración): tras ticket + auditoría CREAR_TICKET,
+   * antes de la obligación de Caja. No usar en rutas HTTP.
+   */
+  beforeCajaObligacion?: () => Promise<void>;
+  /**
+   * Solo pruebas (integración): tras maybeCreateCajaObligacionEnTx,
+   * antes del consumo de créditos. No usar en rutas HTTP.
+   */
+  afterCajaObligacion?: () => Promise<void>;
 };
 
 /** Puerto mínimo para validar emisor (inyectable en unit tests). */
@@ -273,11 +298,17 @@ export async function lockAndAssertEmisorPuedeCrearTicket(
 
 /**
  * Crea un ticket EMITIDO con sus líneas en una sola transacción.
- * Idempotencia: UNIQUE(idempotencyKey) + requestHash + vendedorId de sesión.
+ * Idempotencia: UNIQUE(idempotencyKey) + requestHash + Ticket.vendedorId.
  *
- * Créditos: si el control aplica (VENDEDOR, control activo, createdAt ≥ inicioEn),
- * el consumo de `totalApostado` ocurre en la misma TX; saldo insuficiente → rollback.
- * Replay idempotente no vuelve a consumir. ADMIN conserva exención de créditos.
+ * Atribución (C3): VENDEDOR → siempre sí mismo. ADMIN → opcionalmente un
+ * VENDEDOR activo (`atribuidoAVendedorId`); sin atribución = venta ADMIN
+ * (sin obligación de Caja).
+ *
+ * Caja: si activa y ticket elegible (vendedor VENDEDOR + createdAt ≥ activadaEn),
+ * crea `CajaObligacion` en la misma TX (snapshot de comisión). Fallo → rollback.
+ *
+ * Créditos: siguen ligados al actor de sesión (VENDEDOR emisor). ADMIN no
+ * consume; la atribución NO toca créditos del vendedor atribuido.
  *
  * `db` opcional: en integración/aceptación pasar el cliente de
  * `createIntegrationPrismaClient`. Por defecto usa `@/lib/prisma`
@@ -296,14 +327,54 @@ export async function createTicket(
       createPrismaCreditosStore(tx, { alreadyInTransaction: true }));
   const fechaJuego = validarFechaJuegoHoy(input.fechaJuego, ahora);
   const lineasBasicas = validarLineasBasicas(input.lineas);
-  const vendedorId =
-    input.vendedorId === undefined || input.vendedorId === ""
-      ? null
-      : input.vendedorId;
 
-  if (!vendedorId) {
+  let actorUserId: string | null = null;
+  const fromOptions = options.actorUserId?.trim();
+  if (fromOptions) {
+    actorUserId = fromOptions;
+  } else if (
+    typeof input.vendedorId === "string" &&
+    input.vendedorId.trim() !== ""
+  ) {
+    actorUserId = input.vendedorId.trim();
+  }
+
+  if (!actorUserId) {
     throw new ConfigurationError(
       "vendedorId de sesión requerido para emitir tickets.",
+    );
+  }
+
+  const atribuidoRaw =
+    options.atribuidoAVendedorId !== undefined
+      ? options.atribuidoAVendedorId
+      : input.atribuidoAVendedorId;
+  const atribuidoAVendedorId =
+    typeof atribuidoRaw === "string" && atribuidoRaw.trim()
+      ? atribuidoRaw.trim()
+      : null;
+
+  // Resolver Ticket.vendedorId (atribuido o emisor).
+  let ticketVendedorId: string;
+  if (actorRol === "VENDEDOR") {
+    if (atribuidoAVendedorId && atribuidoAVendedorId !== actorUserId) {
+      throw new TicketSellerNotAllowedError(
+        "Un vendedor no puede atribuir la venta a otro usuario.",
+        "SELLER_ATTRIBUTION_FORBIDDEN",
+      );
+    }
+    ticketVendedorId = actorUserId;
+  } else if (actorRol === "ADMIN") {
+    if (atribuidoAVendedorId) {
+      // Fast-fail fuera de TX; se revalida dentro.
+      await assertVendedorElegibleParaAtribucion(db, atribuidoAVendedorId);
+      ticketVendedorId = atribuidoAVendedorId;
+    } else {
+      ticketVendedorId = actorUserId;
+    }
+  } else {
+    throw new TicketSellerNotAllowedError(
+      "Rol no autorizado para emitir tickets.",
     );
   }
 
@@ -333,6 +404,7 @@ export async function createTicket(
   };
 
   // Fast-path: evita consumir TicketCounter en replay.
+  // Compara Ticket.vendedorId (atribuido), no solo el actor.
   const existente = await db.ticket.findUnique({
     where: { idempotencyKey },
     include: includeLineas,
@@ -340,22 +412,40 @@ export async function createTicket(
   if (existente) {
     return resolverReplay({
       existing: existente,
-      vendedorId,
+      vendedorId: ticketVendedorId,
       requestHash,
     });
   }
 
   // Fast-fail fuera de TX (optimización). La autoridad es el FOR UPDATE dentro.
-  await assertEmisorPuedeCrearTicket(db, { vendedorId, actorRol });
+  await assertEmisorPuedeCrearTicket(db, {
+    vendedorId: actorUserId,
+    actorRol,
+  });
 
   try {
     const ticket = await db.$transaction(
       async (tx) => {
-      // Autoridad: bloquear Usuario y revalidar activo/rol en esta TX.
-      // Orden de bloqueos: Usuario → (más tarde) VendedorCreditoCuenta.
-      await lockAndAssertEmisorPuedeCrearTicket(tx, { vendedorId, actorRol });
+      // Autoridad + orden de locks (compatible con setComisionVendedor):
+      //   1) Usuario(actor) FOR UPDATE
+      //   2) Usuario(atribuido) FOR UPDATE si ≠ actor
+      //   3) VendedorComision(ticketVendor) FOR UPDATE (en maybeCreate…)
+      //   4) VendedorCreditoCuenta(actor) FOR UPDATE (créditos)
+      await lockAndAssertEmisorPuedeCrearTicket(tx, {
+        vendedorId: actorUserId,
+        actorRol,
+      });
       if (options.afterEmisorLocked) {
         await options.afterEmisorLocked();
+      }
+
+      // Atribución ADMIN: bloquear al VENDEDOR atribuido (mismo orden que
+      // setComision: Usuario(vend) antes de VendedorComision).
+      if (ticketVendedorId !== actorUserId) {
+        await lockAndAssertEmisorPuedeCrearTicket(tx, {
+          vendedorId: ticketVendedorId,
+          actorRol: "VENDEDOR",
+        });
       }
 
       const multiplicadorUsado = await getMultiplicadorPremio(tx);
@@ -407,7 +497,7 @@ export async function createTicket(
           numeroVisible,
           codigoPublico,
           fechaJuego,
-          vendedorId,
+          vendedorId: ticketVendedorId,
           totalApostado,
           estado: "EMITIDO",
           multiplicadorUsado,
@@ -427,7 +517,7 @@ export async function createTicket(
       });
 
       await recordAuditEvent(tx, {
-        usuarioId: vendedorId,
+        usuarioId: actorUserId,
         accion: "CREAR_TICKET",
         entidad: "TICKET",
         entidadId: created.id,
@@ -435,14 +525,36 @@ export async function createTicket(
           numeroVisible: created.numeroVisible,
           totalApostado: created.totalApostado.toFixed(2),
           fechaJuego: fechaStr,
+          ...(ticketVendedorId !== actorUserId
+            ? { atribuidoAVendedorId: ticketVendedorId }
+            : {}),
         },
       });
 
-      // Corte por Ticket.createdAt (instante absoluto), no fechaJuego.
+      // Caja C3: obligación en la misma TX (antes de créditos).
+      // Fallo de obligación → rollback del ticket. Sin obligación huérfana.
+      if (options.beforeCajaObligacion) {
+        await options.beforeCajaObligacion();
+      }
+      await maybeCreateCajaObligacionEnTx(tx, {
+        ticketId: created.id,
+        ticketVendedorId,
+        bruto: created.totalApostado,
+        ticketCreatedAt: created.createdAt,
+        actorUserId,
+        actorAdminId: actorRol === "ADMIN" ? actorUserId : null,
+        ahora,
+      });
+      if (options.afterCajaObligacion) {
+        await options.afterCajaObligacion();
+      }
+
+      // Créditos: siempre el actor de sesión (no el atribuido).
+      // ADMIN → skipped; VENDEDOR → consume de su propia cuenta.
       const creditsStore = bindCreditsStore(tx);
       await consumirCreditosTrasEmitirTicket(creditsStore, {
         actorRol,
-        vendedorId,
+        vendedorId: actorUserId,
         ticketId: created.id,
         ticketCreatedAt: created.createdAt,
         totalApostado: created.totalApostado,
@@ -477,7 +589,7 @@ export async function createTicket(
     }
     return resolverReplay({
       existing: race,
-      vendedorId,
+      vendedorId: ticketVendedorId,
       requestHash,
     });
   }

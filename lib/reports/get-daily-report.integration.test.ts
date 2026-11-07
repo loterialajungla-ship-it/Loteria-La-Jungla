@@ -8,7 +8,6 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import { createTicket } from "@/lib/tickets/create-ticket";
-import { anularTicket } from "@/lib/tickets/anular-ticket";
 import { getDailyReport } from "@/lib/reports/get-daily-report";
 import { sumMoneyStrings } from "@/lib/reports/aggregate-sales";
 import { HORAS_SORTEO, hoyYYYYMMDD } from "@/lib/fecha";
@@ -182,9 +181,13 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
       db,
     );
     trackOwnedTicketId(domain, toAnular.ticket.id);
-    await anularTicket(db, {
-      id: toAnular.ticket.id,
-      motivo: "Prueba reporte",
+    // Fixture histórico ANULADO (producto C7.2 prohíbe anularTicket).
+    const { seedHistoricalAnuladoForTests } = await import(
+      "@/lib/tickets/integration/seed-historical-anulado"
+    );
+    await seedHistoricalAnuladoForTests(db, {
+      ticketId: toAnular.ticket.id,
+      motivo: "Prueba reporte (histórico)",
       anuladoPorId: admin.id,
     });
 

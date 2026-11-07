@@ -1,5 +1,11 @@
 import { Prisma } from "@prisma/client";
 import {
+  CajaError,
+  CajaForbiddenError,
+  CajaNotFoundError,
+  CajaValidationError,
+} from "@/lib/caja/errors";
+import {
   CreditoDomainError,
   CreditoIdempotencyConflictError,
   CreditosConfigIncompleteError,
@@ -10,6 +16,7 @@ import {
   ConfigurationError,
   IdempotencyConflictError,
   TicketAlreadyAnuladoError,
+  TicketAnulacionProhibidaError,
   TicketDomainError,
   TicketNotFoundError,
   TicketSellerNotAllowedError,
@@ -54,8 +61,28 @@ export function mapTicketErrorToHttp(error: unknown): {
     return jsonError(409, error.code, error.message);
   }
 
+  if (error instanceof TicketAnulacionProhibidaError) {
+    return jsonError(403, error.code, error.message);
+  }
+
   if (error instanceof TicketSellerNotAllowedError) {
     return jsonError(403, error.code, error.message);
+  }
+
+  if (error instanceof CajaForbiddenError) {
+    return jsonError(403, error.code, error.message);
+  }
+
+  if (error instanceof CajaNotFoundError) {
+    return jsonError(404, error.code, error.message);
+  }
+
+  if (error instanceof CajaValidationError) {
+    return jsonError(400, error.code, error.message);
+  }
+
+  if (error instanceof CajaError) {
+    return jsonError(400, error.code, error.message);
   }
 
   if (error instanceof IdempotencyConflictError) {

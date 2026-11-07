@@ -143,6 +143,43 @@ export function formatAuditDetalleLegible(args: {
         : "?";
       return `Cancelación de programación ${fecha ?? "?"} ${horaLabel}: ${animalLabel(numero, names)}`;
     }
+    case "ACTIVAR_CAJA": {
+      const cuando = str(d.activadaEn);
+      return cuando ? `Activación de Caja (${cuando})` : "Activación de Caja";
+    }
+    case "CREAR_COMISION_VENDEDOR": {
+      const pct = str(d.porcentajeNuevo);
+      return pct
+        ? `Comisión inicial ${pct} %`
+        : "Comisión inicial de vendedor";
+    }
+    case "CAMBIAR_COMISION_VENDEDOR": {
+      const ant = str(d.porcentajeAnterior);
+      const neu = str(d.porcentajeNuevo);
+      if (ant && neu) return `Comisión ${ant} % → ${neu} %`;
+      return "Cambio de comisión de vendedor";
+    }
+    case "CREAR_CAJA_OBLIGACION": {
+      const bruto = str(d.bruto);
+      const pct = str(d.comisionPorcentaje);
+      const admin = str(d.importeAdmin);
+      if (bruto && pct && admin) {
+        return `Obligación Caja bruto ${bruto} (comisión ${pct} %, a entregar ${admin})`;
+      }
+      return "Creación de obligación de Caja";
+    }
+    case "CREAR_CAJA_DECLARACION": {
+      const importe = str(d.importeDeclarado);
+      return importe
+        ? `Declaración de entrega ${importe}`
+        : "Declaración de entrega de Caja";
+    }
+    case "CREAR_CAJA_CONFIRMACION": {
+      const importe = str(d.importeConfirmado);
+      return importe
+        ? `Confirmación de recepción ${importe}`
+        : "Confirmación de recepción de Caja";
+    }
     default:
       return args.accion;
   }

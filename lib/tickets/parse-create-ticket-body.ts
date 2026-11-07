@@ -98,10 +98,17 @@ export function parseCreateTicketBody(raw: unknown): CreateTicketInput {
     };
   });
 
+  let atribuidoAVendedorId: string | null = null;
+  if (typeof body.vendedorId === "string") {
+    const trimmed = body.vendedorId.trim();
+    atribuidoAVendedorId = trimmed.length > 0 ? trimmed : null;
+  }
+
   return {
     fechaJuego: body.fechaJuego.trim(),
-    // vendedorId del cliente se IGNORA; la API asigna el usuario autenticado.
+    // Emisor = sesión (lo fija la API). Body.vendedorId solo como atribución ADMIN.
     vendedorId: null,
+    atribuidoAVendedorId,
     idempotencyKey,
     lineas,
   };

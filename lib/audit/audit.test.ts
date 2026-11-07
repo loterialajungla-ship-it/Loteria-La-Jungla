@@ -172,6 +172,23 @@ describe("formato legible", () => {
     assert.match(text, /Error/);
     assert.match(text, /20261002-000001/);
   });
+
+  it("CREAR_CAJA_DECLARACION y CONFIRMACION", () => {
+    const d = formatAuditDetalleLegible({
+      accion: "CREAR_CAJA_DECLARACION",
+      entidad: "CAJA_DECLARACION",
+      entidadId: "d1",
+      detalle: { importeDeclarado: "120.50" },
+    });
+    assert.match(d, /120\.50/);
+    const c = formatAuditDetalleLegible({
+      accion: "CREAR_CAJA_CONFIRMACION",
+      entidad: "CAJA_CONFIRMACION",
+      entidadId: "c1",
+      detalle: { importeConfirmado: "80.00" },
+    });
+    assert.match(c, /80\.00/);
+  });
 });
 
 describe("autorización API auditoría", () => {

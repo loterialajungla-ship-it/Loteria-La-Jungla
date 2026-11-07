@@ -123,6 +123,7 @@ describe("AppNavLinks / nav-config — rutas y táctil (D.3.D)", () => {
         "/admin",
         "/admin/tickets",
         "/admin/creditos",
+        "/admin/caja",
         "/admin/usuarios",
         "/admin/reportes",
         "/admin/auditoria",
@@ -132,7 +133,7 @@ describe("AppNavLinks / nav-config — rutas y táctil (D.3.D)", () => {
     );
     assert.deepEqual(
       VENDOR_NAV.map((i) => i.href),
-      ["/venta", "/venta/tickets", "/perfil"],
+      ["/venta", "/venta/tickets", "/venta/caja", "/perfil"],
     );
   });
 

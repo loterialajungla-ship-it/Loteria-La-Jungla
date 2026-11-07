@@ -483,8 +483,11 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     assert.ok(adminIds.includes(hist.id));
   });
 
-  // ——— 9. Anulación ———
-  it("anulación ADMIN: anuladoPorId + vendedor sigue consultando", async () => {
+  // ——— 9. Anulación (C7.2: prohibida) ———
+  it("C7.2: ADMIN no puede anular; ticket y consulta vendedor intactos", async () => {
+    const { TicketAnulacionProhibidaError } = await import(
+      "@/lib/tickets/errors"
+    );
     const fecha = hoyYYYYMMDD(AHORA_VE_MANANA);
     const vendor = await createVendorUser("vend_anul");
     const created = await createTicket(
@@ -498,29 +501,29 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       db,
     );
 
-    const anulado = await anularTicket(db, {
-      id: created.ticket.id,
-      motivo: "Corrección acceptance: error de digitación",
-      anuladoPorId: adminId,
-    });
-    assert.equal(anulado.estado, "ANULADO");
-    assert.equal(anulado.anuladoPorId, adminId);
+    await assert.rejects(
+      () =>
+        anularTicket(db, {
+          id: created.ticket.id,
+          motivo: "Corrección acceptance: error de digitación",
+          anuladoPorId: adminId,
+        }),
+      TicketAnulacionProhibidaError,
+    );
 
     const row = await db.ticket.findUniqueOrThrow({
       where: { id: created.ticket.id },
     });
-    assert.equal(row.estado, "ANULADO");
-    assert.ok(row.anuladoAt);
-    assert.equal(row.anuladoPorId, adminId);
-    assert.match(row.motivoAnulacion ?? "", /digitación/);
+    assert.equal(row.estado, "EMITIDO");
+    assert.equal(row.anuladoAt, null);
+    assert.equal(row.anuladoPorId, null);
 
     const detalle = await getVendorTicketById(
       db,
       { userId: vendor.id, rol: "VENDEDOR" },
       created.ticket.id,
     );
-    assert.equal(detalle.estado, "ANULADO");
-    assert.equal(detalle.estadoDerivado, "ANULADO");
+    assert.equal(detalle.estado, "EMITIDO");
     assert.equal(await db.ticketLinea.count({ where: { ticketId: row.id } }), 1);
   });
 
@@ -656,9 +659,13 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       AHORA_VE_MANANA,
       db,
     );
-    await anularTicket(db, {
-      id: anular.ticket.id,
-      motivo: "Anulación para prueba de exposición",
+    // Fixture histórico ANULADO (no vía anularTicket — C7.2).
+    const { seedHistoricalAnuladoForTests } = await import(
+      "@/lib/tickets/integration/seed-historical-anulado"
+    );
+    await seedHistoricalAnuladoForTests(db, {
+      ticketId: anular.ticket.id,
+      motivo: "Histórico exposición acceptance",
       anuladoPorId: adminId,
     });
 
@@ -1186,9 +1193,12 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
       AHORA_VE_MANANA,
       db,
     );
-    await anularTicket(db, {
-      id: anulado.ticket.id,
-      motivo: "Acceptance reporte",
+    const { seedHistoricalAnuladoForTests } = await import(
+      "@/lib/tickets/integration/seed-historical-anulado"
+    );
+    await seedHistoricalAnuladoForTests(db, {
+      ticketId: anulado.ticket.id,
+      motivo: "Acceptance reporte (histórico)",
       anuladoPorId: adminId,
     });
 

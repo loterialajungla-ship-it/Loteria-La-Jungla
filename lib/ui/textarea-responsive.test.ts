@@ -128,13 +128,11 @@ describe("Textarea — API y patrón responsive (D.3.F / D.3.H)", () => {
       path.join(root, "app/admin/AdminFilaResultado.tsx"),
       "utf8",
     );
-    assert.match(anular, /Textarea/);
-    assert.match(anular, /variant="danger"/);
-    assert.match(anular, /MOTIVO_ANULACION_MAX/);
-    assert.match(anular, /maxLength=\{MOTIVO_ANULACION_MAX\}/);
-    assert.match(anular, /Describe el motivo/);
+    // C7.2: panel de anulación ya no usa Textarea ni llama a /anular.
+    assert.match(anular, /Anulación no disponible/);
+    assert.doesNotMatch(anular, /Textarea/);
+    assert.doesNotMatch(anular, /\/anular/);
     assert.doesNotMatch(anular, /<textarea\b/);
-    assert.doesNotMatch(anular, /focus-visible:border-brand-600/);
 
     assert.match(fila, /Textarea/);
     assert.match(fila, /variant="danger"/);

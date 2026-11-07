@@ -32,8 +32,10 @@ export const UNIT_TEST_ROOTS: ReadonlyArray<{
   { relativeDir: path.join("lib", "http"), recursive: true },
   { relativeDir: path.join("lib", "resultados"), recursive: true },
   { relativeDir: path.join("lib", "creditos"), recursive: true },
+  { relativeDir: path.join("lib", "caja"), recursive: true },
   { relativeDir: path.join("lib", "ui"), recursive: true },
   { relativeDir: path.join("components", "tickets"), recursive: true },
+  { relativeDir: path.join("components", "caja"), recursive: true },
   { relativeDir: path.join("app", "admin"), recursive: true },
 ];
 

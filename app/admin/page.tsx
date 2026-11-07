@@ -93,6 +93,9 @@ export default async function AdminPage({ searchParams }: Props) {
         <Link href="/admin/creditos" className={quickLinkClass}>
           Créditos
         </Link>
+        <Link href="/admin/caja" className={quickLinkClass}>
+          Caja
+        </Link>
         <Link href="/admin/usuarios" className={quickLinkClass}>
           Usuarios
         </Link>

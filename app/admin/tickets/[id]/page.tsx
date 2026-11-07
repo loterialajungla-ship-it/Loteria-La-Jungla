@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AnularTicketPanel } from "@/components/tickets/AnularTicketPanel";
 import { etiquetaHora, formatearFechaUi } from "@/components/tickets/pos-state";
 import { prisma } from "@/lib/prisma";
 import { getAdminTicketById } from "@/lib/tickets/get-admin-ticket";
@@ -246,12 +245,10 @@ export default async function AdminTicketDetallePage({ params }: Props) {
         </div>
 
         {!anulado ? (
-          <AnularTicketPanel
-            ticketId={ticket.id}
-            numeroVisible={ticket.numeroVisible}
-            fechaJuego={formatearFechaUi(ticket.fechaJuego)}
-            totalApostado={ticket.totalApostado}
-          />
+          <Alert variant="info" title="Anulación no disponible">
+            La anulación de tickets y las devoluciones no están permitidas. El
+            ticket emitido permanece vigente para Caja, créditos y liquidación.
+          </Alert>
         ) : null}
     </main>
   );

@@ -124,7 +124,6 @@ async function main(): Promise<void> {
   const { PrismaClient } = await import("@prisma/client");
   const { hashPassword } = await import("../lib/auth/password");
   const { createTicket } = await import("../lib/tickets/create-ticket");
-  const { anularTicket } = await import("../lib/tickets/anular-ticket");
   const { recordAuditEvent } = await import("../lib/audit/audit");
   const {
     hoyYYYYMMDD,
@@ -320,22 +319,11 @@ async function main(): Promise<void> {
       ],
     });
 
+    // C7.2: ya no se anulan tickets. Se deja un ticket emitido adicional.
     const ticketAnular = await createOrReplayTicket({
       key: keyAnular,
       lineas: [{ hora: horaA, numeroAnimal: "15", importe: "7.00" }],
     });
-
-    const anularRow = await appPrisma.ticket.findUnique({
-      where: { id: ticketAnular.id },
-      select: { estado: true },
-    });
-    if (anularRow?.estado === "EMITIDO") {
-      await anularTicket(appPrisma, {
-        id: ticketAnular.id,
-        motivo: "Ticket de prueba anulado (seed:manual-test)",
-        anuladoPorId: admin.id,
-      });
-    }
 
     const {
       ensureSeedManualResult,
@@ -395,7 +383,7 @@ async function main(): Promise<void> {
       `  exposición numeroVisible=${ticketExpo.numeroVisible}  total=${ticketExpo.totalApostado}`,
     );
     console.log(
-      `  anulado    numeroVisible=${ticketAnular.numeroVisible}  (ANULADO)`,
+      `  extra      numeroVisible=${ticketAnular.numeroVisible}  (EMITIDO; C7.2 sin anulación)`,
     );
     console.log("");
     console.log("Resultado de prueba:");

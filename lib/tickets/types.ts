@@ -14,6 +14,11 @@ export type CreateTicketInput = {
   fechaJuego: string;
   /** Id del usuario autenticado (sesión). No confiar en el body del cliente. */
   vendedorId?: string | null;
+  /**
+   * Solo ADMIN: atribución opcional a un VENDEDOR (viene del body `vendedorId`).
+   * La ruta HTTP solo lo reenvía si el actor es ADMIN; createTicket revalida.
+   */
+  atribuidoAVendedorId?: string | null;
   /** UUID de idempotencia (obligatorio en emisión nueva). */
   idempotencyKey: string;
   lineas: CreateTicketLineaInput[];

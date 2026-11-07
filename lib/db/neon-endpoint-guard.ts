@@ -550,6 +550,44 @@ export function assertProductionRenameAdminLoginTarget(
   );
 }
 
+/** Opt-in 1: activar módulo Caja solo en producción. */
+export const PRODUCTION_ACTIVATE_CAJA_TARGET = "production";
+
+/**
+ * Opt-in 2 de activación de Caja (frase distinta de bootstrap/reset/repair/rename).
+ * No es un secreto de conexión.
+ */
+export const CONFIRM_PRODUCTION_ACTIVATE_CAJA_VALUE =
+  "I_UNDERSTAND_THIS_ACTIVATES_CAJA_IN_PRODUCTION";
+
+/**
+ * Activación operativa de Caja solo contra PRODUCTION allowlisted.
+ * Dual opt-in propio. Rechaza TEST y hosts desconocidos. Nunca registra URLs.
+ */
+export function assertProductionActivateCajaTarget(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
+  const target = env.ACTIVATE_CAJA_TARGET?.trim().toLowerCase() ?? "";
+  if (target !== PRODUCTION_ACTIVATE_CAJA_TARGET) {
+    throw new Error(
+      "Activación de Caja abortada: define ACTIVATE_CAJA_TARGET=production y la confirmación explícita. No se permite activación implícita.",
+    );
+  }
+
+  const confirm = env.CONFIRM_PRODUCTION_ACTIVATE_CAJA?.trim() ?? "";
+  if (confirm !== CONFIRM_PRODUCTION_ACTIVATE_CAJA_VALUE) {
+    throw new Error(
+      "Activación de Caja abortada: CONFIRM_PRODUCTION_ACTIVATE_CAJA no coincide con la frase de confirmación documentada.",
+    );
+  }
+
+  // Confirmaciones de otros procedimientos NO autorizan esta activación.
+  return assertProductionDatabaseUrlsAllowlisted(
+    env,
+    "Activación de Caja abortada",
+  );
+}
+
 /**
  * Valida que una URL de TEST (proceso padre) sea el endpoint autorizado.
  */

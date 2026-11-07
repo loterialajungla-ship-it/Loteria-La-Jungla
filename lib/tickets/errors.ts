@@ -98,6 +98,19 @@ export class TicketAlreadyAnuladoError extends TicketDomainError {
   }
 }
 
+/**
+ * Política C7.2: no se permiten anulaciones ni devoluciones de tickets.
+ * HTTP típico: 403.
+ */
+export class TicketAnulacionProhibidaError extends TicketDomainError {
+  constructor(
+    message = "La anulación de tickets no está permitida. No hay devoluciones de crédito ni de dinero.",
+  ) {
+    super("TICKET_ANULACION_PROHIBIDA", message);
+    this.name = "TicketAnulacionProhibidaError";
+  }
+}
+
 export class InvalidAnulacionMotivoError extends TicketValidationError {
   constructor(
     message = "El motivo de anulación es obligatorio (máx. 500 caracteres).",
