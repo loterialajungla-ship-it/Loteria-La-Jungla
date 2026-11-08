@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { jsonAuthError } from "@/lib/auth/http";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/prisma";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import {
   createVendor,
   listAdminUsers,
@@ -51,6 +52,9 @@ export async function GET(request: Request) {
  * Crea únicamente VENDEDOR. Ignora/rechaza rol ADMIN.
  */
 export async function POST(request: Request) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let admin;
   try {
     admin = await requireAdmin();

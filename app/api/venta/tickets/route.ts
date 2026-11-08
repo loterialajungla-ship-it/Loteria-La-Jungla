@@ -7,6 +7,7 @@ import { listVendorTickets } from "@/lib/tickets/vendor-tickets";
 import { mapTicketErrorToHttp } from "@/lib/tickets/map-ticket-http-error";
 import { parseCreateTicketBody } from "@/lib/tickets/parse-create-ticket-body";
 import type { TicketCreado } from "@/lib/tickets/types";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,9 @@ export async function GET(request: Request) {
  * (revalidado en createTicket); VENDEDOR no puede atribuir a otro.
  */
 export async function POST(request: Request) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let actor;
   try {
     actor = await requireVendorOrAdmin();

@@ -9,6 +9,7 @@ import {
 import { CajaForbiddenError, CajaValidationError } from "@/lib/caja/errors";
 import { mapCajaErrorToHttp } from "@/lib/caja/map-caja-http-error";
 import { serializeDeclaracion } from "@/lib/caja/serializers";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,9 @@ export async function GET() {
  * Solo VENDEDOR; declara para sí mismo.
  */
 export async function POST(request: Request) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let actor;
   try {
     actor = await requireVendorOrAdmin();

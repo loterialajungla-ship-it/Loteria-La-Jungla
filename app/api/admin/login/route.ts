@@ -5,6 +5,7 @@ import {
   loginWithCredentials,
   redirectPathForRole,
 } from "@/lib/auth/login";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { absoluteUrlFromRequest } from "@/lib/http/public-origin";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,9 @@ export const runtime = "nodejs";
  * AUTH NUEVA: Usuario.usuario + password → lj_session.
  */
 export async function POST(request: Request) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   const formData = await request.formData();
   const usuario = String(formData.get("usuario") ?? "");
   const password = String(formData.get("password") ?? "");

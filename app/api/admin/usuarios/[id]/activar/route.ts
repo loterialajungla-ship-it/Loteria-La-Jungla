@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/guards";
 import { jsonAuthError } from "@/lib/auth/http";
 import { AuthError } from "@/lib/auth/errors";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { prisma } from "@/lib/prisma";
 import { activarUsuario } from "@/lib/users/admin-users";
 
@@ -14,7 +15,10 @@ type Ctx = { params: { id: string } };
  * POST /api/admin/usuarios/[id]/activar
  * Solo ADMIN. Reactiva VENDEDOR (activo=true).
  */
-export async function POST(_request: Request, { params }: Ctx) {
+export async function POST(request: Request, { params }: Ctx) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let admin;
   try {
     admin = await requireAdmin();

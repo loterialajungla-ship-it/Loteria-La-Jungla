@@ -7,6 +7,7 @@ import {
   changeOwnPassword,
   parseChangePasswordBody,
 } from "@/lib/auth/password-management";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,9 @@ export const runtime = "nodejs";
  * ADMIN | VENDEDOR autenticado. Invalida todas sus sesiones.
  */
 export async function POST(request: Request) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let user;
   try {
     user = await requireAuthenticatedUser();

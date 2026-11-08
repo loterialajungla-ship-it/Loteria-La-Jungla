@@ -10,6 +10,7 @@ import {
 import { CajaNotFoundError, CajaValidationError } from "@/lib/caja/errors";
 import { mapCajaErrorToHttp } from "@/lib/caja/map-caja-http-error";
 import { moneyFixed2 } from "@/lib/caja/money";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +87,9 @@ export async function GET(_request: Request, { params }: Ctx) {
  * Solo afecta tickets futuros (snapshot en obligación).
  */
 export async function PATCH(request: Request, { params }: Ctx) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let admin;
   try {
     admin = await requireAdmin();
