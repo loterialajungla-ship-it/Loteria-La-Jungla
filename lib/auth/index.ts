@@ -4,7 +4,8 @@
  * Único sistema: Usuario + passwordHash + UsuarioSesion + cookie lj_session
  * Bootstrap (script aislado): ADMIN_BOOTSTRAP_USER + ADMIN_BOOTSTRAP_PASSWORD
  *
- * Pendiente: rate limit de login; CSRF más estricto si hace falta (hoy SameSite=Lax).
+ * Login: límite persistente en Postgres por pareja IP+usuario.
+ * CSRF: SameSite=Lax + assertMutationSameOrigin (Origin/Referer) en mutaciones cookie-auth (B5.6-D).
  */
 
 export {
