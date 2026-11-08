@@ -4,6 +4,7 @@ import { setLjSessionCookie } from "@/lib/auth/cookies";
 import {
   loginWithCredentials,
   redirectPathForRole,
+  resolveLoginClientIp,
 } from "@/lib/auth/login";
 import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { absoluteUrlFromRequest } from "@/lib/http/public-origin";
@@ -23,7 +24,20 @@ export async function POST(request: Request) {
   const usuario = String(formData.get("usuario") ?? "");
   const password = String(formData.get("password") ?? "");
 
-  const result = await loginWithCredentials(prisma, { usuario, password });
+  const resolvedIp = resolveLoginClientIp(request);
+  if (resolvedIp.status === "rejected") {
+    console.error("[auth] login rechazado: sin IP de borde confiable");
+    return NextResponse.redirect(
+      absoluteUrlFromRequest(request, "/login?error=1"),
+      { status: 303 },
+    );
+  }
+
+  const result = await loginWithCredentials(prisma, {
+    usuario,
+    password,
+    clientIp: resolvedIp.ip,
+  });
 
   if (!result) {
     return NextResponse.redirect(

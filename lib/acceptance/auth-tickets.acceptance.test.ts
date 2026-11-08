@@ -16,6 +16,7 @@ import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { loginWithCredentials } from "@/lib/auth/login";
+import { createMemoryLoginRateLimiter } from "@/lib/auth/login-rate-limit";
 import {
   deleteSessionByToken,
   resolveSessionByToken,
@@ -264,6 +265,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   // ——— 3–4. Login ———
   it("login ADMIN: sesión, cookie conceptual, tokenHash ≠ token", async () => {
     const result = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: adminUsuario,
       password: adminPassword,
     });
@@ -294,6 +298,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
   it("login ADMIN contraseña incorrecta → null genérico", async () => {
     const result = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: adminUsuario,
       password: "wrong-password-xx",
     });
@@ -303,6 +310,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("login VENDEDOR asocia sesión al Usuario correcto", async () => {
     const vendor = await createVendorUser("vend_acc_a");
     const result = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -319,10 +329,16 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("permisos UI/API ADMIN vs VENDEDOR; /ticket público", async () => {
     const vendor = await createVendorUser("vend_perm");
     const adminLogin = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: adminUsuario,
       password: adminPassword,
     });
     const vendLogin = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -531,6 +547,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("desactivar invalida sesión; reactivar exige login nuevo", async () => {
     const vendor = await createVendorUser("vend_deact");
     const login = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -547,6 +566,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
     // No puede operar como vendedor activo
     const reLogin = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -554,6 +576,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
 
     await activarUsuario(db, { id: vendor.id });
     const fresh = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -955,6 +980,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("sesión expirada y logout invalidan", async () => {
     const vendor = await createVendorUser("vend_sess");
     const login = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -967,6 +995,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     assert.equal(await resolveSessionByToken(db, login!.token), null);
 
     const login2 = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -992,6 +1023,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     assert.doesNotMatch(json, /password/);
 
     const login = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -1040,6 +1074,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("change-password: invalida sesión; antigua falla; nueva login OK", async () => {
     const vendor = await createVendorUser("vend_pw_chg");
     const login = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });
@@ -1054,12 +1091,18 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     assert.equal(await resolveSessionByToken(db, login!.token), null);
     assert.equal(
       await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
         usuario: vendor.usuario,
         password: VENDOR_PASS,
       }),
       null,
     );
     const again = await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: "vendor-acc-99",
     });
@@ -1117,6 +1160,9 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
   it("ADMIN reset VENDEDOR: hash nuevo, sesiones 0, inactivo no reactivado; no reset ADMIN", async () => {
     const vendor = await createVendorUser("vend_pw_rst");
     await loginWithCredentials(db, {
+      clientIp: "203.0.113.10",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendor.usuario,
       password: VENDOR_PASS,
     });

@@ -113,6 +113,8 @@ export function formatAuditDetalleLegible(args: {
     }
     case "LOGIN":
       return "Inicio de sesión";
+    case "LOGIN_FALLIDO":
+      return "Intento de inicio de sesión rechazado";
     case "LOGOUT":
       return "Cierre de sesión";
     case "PROGRAMAR_RESULTADO": {

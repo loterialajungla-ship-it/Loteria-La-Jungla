@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { loginWithCredentials } from "@/lib/auth/login";
+import { createMemoryLoginRateLimiter } from "@/lib/auth/login-rate-limit";
 import { resolveSessionByToken } from "@/lib/auth/session";
 import {
   changeOwnPassword,
@@ -98,6 +99,9 @@ describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
 
   it("cambio propio: hash nuevo, antigua falla, sesiones invalidadas", async () => {
     const login = await loginWithCredentials(db, {
+      clientIp: "203.0.113.11",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendorLogin,
       password: VENDOR_PASS,
     });
@@ -123,12 +127,18 @@ describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
 
     assert.equal(
       await loginWithCredentials(db, {
+      clientIp: "203.0.113.11",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
         usuario: vendorLogin,
         password: VENDOR_PASS,
       }),
       null,
     );
     const again = await loginWithCredentials(db, {
+      clientIp: "203.0.113.11",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendorLogin,
       password: "vendor-new-99",
     });
@@ -187,6 +197,9 @@ describe("integración PostgreSQL — passwords", { skip: !ENABLED }, () => {
 
   it("ADMIN reset VENDEDOR: actualiza hash, invalida sesiones, no reactiva", async () => {
     const login = await loginWithCredentials(db, {
+      clientIp: "203.0.113.11",
+      rateLimitSecret: "acceptance-login-rate-limit-secret",
+      rateLimit: createMemoryLoginRateLimiter(),
       usuario: vendorLogin,
       password: VENDOR_PASS,
     });
