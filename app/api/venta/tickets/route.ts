@@ -12,6 +12,17 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+/**
+ * Debe cubrir el presupuesto de la TX de emisión (`createTicket`:
+ * maxWait 30s + timeout 60s). Mismo valor ya usado en
+ * `/api/cron/resultados-automaticos`.
+ *
+ * Condición de deployment (pendiente de verificación operativa del plan):
+ * el proyecto Vercel debe permitir `maxDuration ≥ 60` en esta función.
+ * No se asume el plan aquí; si el techo del plan es menor, el deploy fallará
+ * o Vercel rechazará el valor — comprobar en dashboard antes de publicar.
+ */
+export const maxDuration = 60;
 
 /**
  * GET /api/venta/tickets
