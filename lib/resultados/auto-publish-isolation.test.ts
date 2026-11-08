@@ -940,20 +940,95 @@ describe("runAutomaticResultsPublish — aislamiento de errores", () => {
     const run = await runAutomaticResultsPublish(base as never, ahora);
 
     assert.equal(run.processed, 2);
+    assert.equal(run.slotsAttempted, 2);
     assert.equal(run.failed, 1);
     assert.equal(run.created, 1);
     assert.equal(run.ok, false);
+    assert.equal(typeof run.durationTotalMs, "number");
+    assert.ok(run.durationTotalMs >= 0);
     assert.deepEqual(created, [9]);
 
     const err = run.results.find((r) => r.status === "error");
     assert.ok(err && err.status === "error");
     assert.equal(err.hora, 10);
     assert.equal(err.error, "No se pudo publicar el sorteo.");
+    assert.equal(typeof err.durationMs, "number");
     assert.doesNotMatch(err.error, /fallo simulado|prisma|secret/i);
 
     const ok = run.results.find((r) => r.status === "created");
     assert.ok(ok && ok.status === "created");
     assert.equal(ok.hora, 9);
+    assert.equal(typeof ok.durationMs, "number");
+  });
+
+  it("el reintento publica la franja pendiente y no duplica la ya creada", async () => {
+    const ahora = new Date(Date.UTC(2026, 9, 2, 14, 0, 0));
+    const db = makePublishFakeDb();
+    let failTen = true;
+    const originalFind = db.resultado.findUnique.bind(db.resultado);
+    db.resultado.findUnique = async (args: {
+      where: { fecha_hora: { fecha: Date; hora: number } };
+    }) => {
+      if (failTen && args.where.fecha_hora.hora === 10) {
+        throw new Error("fallo simulado en franja 10");
+      }
+      return originalFind(args);
+    };
+
+    const first = await runAutomaticResultsPublish(db as never, ahora);
+    assert.equal(first.failed, 1);
+    assert.equal(first.created, 1);
+    assert.equal(first.ok, false);
+    assert.equal(first.slotsAttempted, 2);
+    assert.equal(typeof first.durationTotalMs, "number");
+    const createsAfterFirst = db.stats.createCalls;
+
+    failTen = false;
+    const second = await runAutomaticResultsPublish(db as never, ahora);
+    assert.equal(second.failed, 0);
+    assert.equal(second.ok, true);
+    assert.equal(second.skippedExists, 1);
+    assert.equal(second.created, 1);
+    assert.equal(second.slotsAttempted, 2);
+    const skipped = second.results.find((item) => item.hora === 9);
+    const recovered = second.results.find((item) => item.hora === 10);
+    assert.equal(skipped?.status, "skipped_exists");
+    assert.equal(recovered?.status, "created");
+    assert.equal(typeof skipped?.durationMs, "number");
+    assert.equal(typeof recovered?.durationMs, "number");
+    assert.equal(db.stats.createCalls, createsAfterFirst + 1);
+    assert.equal(db.resultados.size, 2);
+  });
+
+  it("observa duración total/por franja y logs sin secretos", async () => {
+    const ahora = new Date(Date.UTC(2026, 9, 2, 14, 0, 0));
+    const db = makePublishFakeDb();
+    const lines: string[] = [];
+    const originalInfo = console.info;
+    console.info = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    };
+    try {
+      const run = await runAutomaticResultsPublish(db as never, ahora);
+      assert.equal(run.ok, true);
+      assert.equal(run.failed, 0);
+      assert.equal(run.slotsAttempted, run.processed);
+      assert.ok(run.durationTotalMs >= 0);
+      for (const item of run.results) {
+        assert.equal(typeof item.durationMs, "number");
+        assert.ok((item.durationMs ?? -1) >= 0);
+      }
+      const joined = lines.join("\n");
+      assert.match(joined, /"event":"start"/);
+      assert.match(joined, /"event":"slot"/);
+      assert.match(joined, /"event":"end"/);
+      assert.equal(joined.includes("CRON_SECRET"), false);
+      assert.equal(joined.includes("authorization"), false);
+      assert.equal(joined.includes("postgresql://"), false);
+      assert.equal(joined.includes("password"), false);
+    } finally {
+      console.info = originalInfo;
+    }
   });
 
   it("catálogo no canónico aborta antes de crear resultados", async () => {
