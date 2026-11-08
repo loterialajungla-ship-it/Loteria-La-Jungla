@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/guards";
 import { jsonAuthError } from "@/lib/auth/http";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { TicketAnulacionProhibidaError } from "@/lib/tickets/errors";
 import { mapTicketErrorToHttp } from "@/lib/tickets/map-ticket-http-error";
 
@@ -14,9 +15,10 @@ type Ctx = { params: { id: string } };
  * C7.2: anulación deshabilitada. Siempre 403 (tras auth ADMIN).
  * No muta tickets, créditos ni Caja.
  */
-export async function POST(_request: Request, _ctx: Ctx) {
-  void _request;
+export async function POST(request: Request, _ctx: Ctx) {
   void _ctx;
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
   try {
     await requireAdmin();
   } catch (error) {

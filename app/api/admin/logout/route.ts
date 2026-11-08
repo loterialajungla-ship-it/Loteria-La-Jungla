@@ -8,6 +8,7 @@ import {
   resolveSessionByToken,
 } from "@/lib/auth/session";
 import { recordAuthAuditBestEffort } from "@/lib/audit/audit";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { absoluteUrlFromRequest } from "@/lib/http/public-origin";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,9 @@ export const runtime = "nodejs";
  * LOGOUT auditoría: best-effort; no guarda token.
  */
 export async function POST(request: Request) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   const token = cookies().get(COOKIE_LJ_SESSION)?.value;
   const resolved = await resolveSessionByToken(prisma, token);
   await deleteSessionByToken(prisma, token);

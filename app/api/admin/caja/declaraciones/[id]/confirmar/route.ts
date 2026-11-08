@@ -10,6 +10,7 @@ import {
   serializeConfirmacion,
   serializeDeclaracion,
 } from "@/lib/caja/serializers";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,9 @@ type Ctx = { params: { id: string } };
  * Body: { importe, idempotencyKey }
  */
 export async function POST(request: Request, { params }: Ctx) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let admin;
   try {
     admin = await requireAdmin();

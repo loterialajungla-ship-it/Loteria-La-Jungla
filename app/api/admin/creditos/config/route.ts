@@ -8,6 +8,7 @@ import {
 import { mapCreditoErrorToHttp } from "@/lib/creditos/api/map-credito-http-error";
 import { CreditoDomainError } from "@/lib/creditos/errors";
 import { prisma } from "@/lib/prisma";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,6 +49,9 @@ export async function GET() {
  * No activa el control por defecto ni inventa inicioEn.
  */
 export async function PATCH(request: Request) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let admin;
   try {
     admin = await requireAdmin();

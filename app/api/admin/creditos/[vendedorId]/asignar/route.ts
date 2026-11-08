@@ -4,6 +4,7 @@ import { jsonAuthError } from "@/lib/auth/http";
 import { adminAsignarCreditos } from "@/lib/creditos/api/admin-mutaciones";
 import { mapCreditoErrorToHttp } from "@/lib/creditos/api/map-credito-http-error";
 import { CreditoDomainError } from "@/lib/creditos/errors";
+import { rejectCrossOriginMutation } from "@/lib/http/csrf";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ type Ctx = { params: { vendedorId: string } };
  * Body: { importe, idempotencyKey, motivo? }. Actor = sesión ADMIN.
  */
 export async function POST(request: Request, { params }: Ctx) {
+  const csrfBlock = rejectCrossOriginMutation(request);
+  if (csrfBlock) return csrfBlock;
+
   let admin;
   try {
     admin = await requireAdmin();
