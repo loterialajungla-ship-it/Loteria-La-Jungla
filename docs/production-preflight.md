@@ -51,6 +51,7 @@ Integración/aceptación **deben** usar solo DB de prueba aislada (`TEST_DATABAS
 | Variable | Uso | Default / notas |
 | --- | --- | --- |
 | `AUTH_SESSION_HOURS` | Duración cookie `lj_session` | `12` (máx. 168) |
+| `LOGIN_RATE_LIMIT_SECRET` | HMAC de los contadores de login (no guarda la IP en claro). Mínimo 32 caracteres. Si falta, es corto o es igual a `CRON_SECRET`, el login responde error genérico y no abre sesión. Rotarlo deja sin efecto los contadores ya guardados | Obligatoria en runtime. No reutilizar `CRON_SECRET`. `LOGIN_RATE_LIMIT_DEV_IP` no se usa en producción |
 | `NODE_ENV` | `production` → cookie `secure` | Lo fija el host |
 | `CRON_SECRET` | Auth del endpoint `POST/GET` `/api/cron/resultados-automaticos` (`Authorization: Bearer …` o `x-cron-secret`) | **Obligatoria para que el endpoint acepte requests autenticados** (p. ej. futuro scheduler externo). Si falta o está vacía, `authorizeCronRequest` responde **fail-closed**. Describe el código local; **no** implica automatización activa. En Vercel Hobby el cron nativo cada 5 min **no** está registrado (`vercel.json` → `"crons": []`). |
 

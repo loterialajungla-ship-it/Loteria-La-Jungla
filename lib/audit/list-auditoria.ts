@@ -14,6 +14,7 @@ import { UserValidationError } from "@/lib/auth/errors";
 
 const ACCIONES = new Set<string>([
   "LOGIN",
+  "LOGIN_FALLIDO",
   "LOGOUT",
   "CREAR_TICKET",
   "ANULAR_TICKET",

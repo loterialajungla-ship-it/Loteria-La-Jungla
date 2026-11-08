@@ -253,9 +253,30 @@ model UsuarioSesion {
 
 
 
+/// Contadores de login fallido. La clave es un HMAC, nunca la IP en claro.
+
+model LoginRateBucket {
+
+  key         String   @id
+
+  failures    Int
+
+  windowStart DateTime
+
+  updatedAt   DateTime @updatedAt
+
+  @@index([windowStart])
+
+}
+
+
+
 enum AccionAuditoria {
 
   LOGIN
+
+  /// Intento de login rechazado. Sin contraseña, hash ni token.
+  LOGIN_FALLIDO
 
   LOGOUT
 
