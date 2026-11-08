@@ -117,3 +117,69 @@ El script:
 | Rollback de código | Independiente del esquema; no elimina tablas/enums |
 
 Separar siempre: revert código ≠ recuperación esquema ≠ recuperación datos ≠ apagado operativo.
+
+---
+
+## C7.4-B — Activación (no ejecutar en C7.4-A)
+
+Tres fases distintas. Esta sección solo describe la activación. No la ejecuta.
+
+### A. Preparación (ya hecha en C7.3 / C7.4-A)
+
+Deben cumplirse todas antes de activar:
+
+1. Código de producción = merge `24ec842` (o un sucesor que no cambie la semántica de Caja).
+2. Las cinco migraciones Caja aplicadas y sin rollback.
+3. `CajaConfig` ausente o `activa=false` y `activadaEn` null.
+4. Cero filas en comisiones, obligaciones, declaraciones, confirmaciones y aplicaciones.
+5. Endpoint allowlisted `ep-spring-silence-b40xhu8w`. Rechazar TEST `ep-muddy-fire-b44816w0`.
+6. Punto de recuperación **posterior a las migraciones y anterior a la activación**. El marcador `0/15933640` (2026-11-07 20:26:55 UTC) es el estado **anterior a las migraciones**. Restaurar producción a ese LSN elimina el esquema Caja. No usarlo como rollback de la activación.
+7. Smoke ADMIN y VENDEDOR de solo lectura en verde, o aceptación explícita de dejarlo pendiente.
+8. Autorización escrita de C7.4-B. Sin ella, detenerse.
+
+### B. Activación
+
+1. Confirmar `DATABASE_URL` y `DIRECT_URL` resuelven a `ep-spring-silence-b40xhu8w` y coinciden. No imprimir URLs.
+2. Lectura previa: vendedores con rol `VENDEDOR` (activos e inactivos) y filas de `VendedorComision`.
+3. Si hay más de un ADMIN activo, definir `ACTIVATE_CAJA_ADMIN_USER_ID`. Si hay uno solo, el script lo resuelve.
+4. Dual opt-in exacto, y solo entonces:
+
+```text
+ACTIVATE_CAJA_TARGET=production
+CONFIRM_PRODUCTION_ACTIVATE_CAJA=I_UNDERSTAND_THIS_ACTIVATES_CAJA_IN_PRODUCTION
+npm run activate:caja:production
+```
+
+5. El guard corre antes de `activarCaja`. Sin las dos variables, exit 1 y cero escrituras.
+6. `activarCaja` corre en una sola transacción: crea `CajaConfig` si falta, pone `activa=true`, `activadaEn` UTC, `activadaPorAdminId`, e inserta 20 % solo donde no hay comisión. No toca créditos, tickets ni obligaciones.
+7. Registrar la salida: `activa`, `activadaEnUtc`, `alreadyActive`, `comisionesInicializadas`.
+8. Retirar del entorno `ACTIVATE_CAJA_TARGET`, `CONFIRM_PRODUCTION_ACTIVATE_CAJA` y `ACTIVATE_CAJA_ADMIN_USER_ID`.
+
+Si el proceso muere después del commit, la transacción ya quedó. Un reintento es idempotente: no cambia `activadaEn` ni recrea comisiones existentes.
+
+### C. Verificación inmediata (aún sin venta)
+
+1. Una fila `CajaConfig`: `activa=true`, `activadaEn` no null.
+2. Cada usuario `rol=VENDEDOR` sin comisión previa queda en 20 %, con historial `porcentajeAnterior` null y `changedByAdminId` del actor.
+3. Porcentajes que ya existían no cambian.
+4. Cero obligaciones, declaraciones, confirmaciones y aplicaciones.
+5. Conteos de `Ticket` y `CreditoMovimiento` iguales a los de antes de activar.
+6. Un vendedor creado después, con Caja ya activa, recibe 20 % en la misma transacción de alta.
+
+### D. Primera venta real (después de la verificación)
+
+No forma parte de la activación. Requiere autorización aparte.
+
+1. Emitir una venta elegible real.
+2. Confirmar exactamente una `CajaObligacion` con snapshot de porcentaje e importes.
+3. El crédito lo consume el actor, no el vendedor atribuido cuando un ADMIN vende a nombre de otro.
+
+### Contingencia de la activación
+
+| Situación | Acción |
+|-----------|--------|
+| Guard rechaza el destino | No hay escritura. Corregir endpoint y no reintentar a ciegas. |
+| Fallo dentro de la transacción | Rollback de Postgres. Caja sigue inactiva. Revisar el error y reintentar solo con autorización. |
+| Exit ≠ 0 después de `Caja activación OK` ausente | Leer `CajaConfig` antes de reintentar. Si `activa=true`, no volver a lanzar el script. |
+| Activación correcta pero se quiere apagar | `activa=false` operativo. No borra comisiones ni obligaciones. No down-migrate. |
+| Hace falta el esquema previo a Caja | Solo entonces el LSN `0/15933640`, y solo con autorización explícita de perder el esquema Caja. |
