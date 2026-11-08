@@ -27,6 +27,8 @@ export type AutoPublishSlotResult =
       numero: string;
       resultadoId: string;
       origen: OrigenResultado;
+      /** Presente en la corrida del cron; medición monotónica (ms). */
+      durationMs?: number;
     }
   | {
       status: "skipped_exists";
@@ -34,6 +36,8 @@ export type AutoPublishSlotResult =
       hora: number;
       numero: string;
       origen: OrigenResultado;
+      /** Presente en la corrida del cron; medición monotónica (ms). */
+      durationMs?: number;
     }
   | {
       status: "error";
@@ -41,18 +45,24 @@ export type AutoPublishSlotResult =
       hora: number;
       /** Mensaje genérico; nunca secretos ni detalle interno de Prisma. */
       error: string;
+      /** Presente en la corrida del cron; medición monotónica (ms). */
+      durationMs?: number;
     };
 
 export type AutoPublishRunResult = {
   /** false si algún sorteo falló; el resto pudo procesarse igual. */
   ok: boolean;
   processed: number;
+  /** Franjas intentadas en esta corrida (igual a `processed`). */
+  slotsAttempted: number;
   created: number;
   skippedExists: number;
   failed: number;
   results: AutoPublishSlotResult[];
   catalogSize: number;
   at: string;
+  /** Duración monotónica total de la corrida (ms), tras validar catálogo. */
+  durationTotalMs: number;
 };
 
 type AutoPublishDb = Pick<
@@ -71,6 +81,11 @@ export class ProgramacionMaterializacionError extends Error {
 }
 
 const SLOT_ERROR_PUBLIC = "No se pudo publicar el sorteo.";
+
+/** Log JSON acotado del cron; nunca secretos ni detalle SQL. */
+function logCronObservability(payload: Record<string, unknown>): void {
+  console.info(JSON.stringify({ channel: "cron.resultados", ...payload }));
+}
 
 export type TryCreateAutomaticOptions = {
   /**
@@ -304,39 +319,78 @@ export async function runAutomaticResultsPublish(
   let skippedExists = 0;
   let failed = 0;
 
+  const runStarted = performance.now();
+  logCronObservability({
+    event: "start",
+    at: ahora.toISOString(),
+    slotsDue: slots.length,
+    catalogSize,
+  });
+
   for (const slot of slots) {
     const fechaStr = fechaAYYYYMMDD(slot.fecha);
+    const slotStarted = performance.now();
     try {
       const r = await tryCreateAutomaticResult(db, slot, ahora, {
         catalogRows: animalesCatalogo,
       });
-      results.push(r);
+      const durationMs = Math.round(performance.now() - slotStarted);
+      const withDuration = { ...r, durationMs };
+      results.push(withDuration);
       if (r.status === "created") created += 1;
       if (r.status === "skipped_exists") skippedExists += 1;
-    } catch (error) {
+      logCronObservability({
+        event: "slot",
+        fecha: fechaStr,
+        hora: slot.hora,
+        status: r.status,
+        durationMs,
+      });
+    } catch {
+      const durationMs = Math.round(performance.now() - slotStarted);
       failed += 1;
       results.push({
         status: "error",
         fecha: fechaStr,
         hora: slot.hora,
         error: SLOT_ERROR_PUBLIC,
+        durationMs,
       });
-      console.error("[resultados-auto] slot failed", {
+      logCronObservability({
+        event: "slot",
         fecha: fechaStr,
         hora: slot.hora,
-        message: error instanceof Error ? error.message : "unknown",
+        status: "error",
+        durationMs,
       });
     }
   }
 
+  const durationTotalMs = Math.round(performance.now() - runStarted);
+  const slotsAttempted = results.length;
+  const ok = failed === 0;
+
+  logCronObservability({
+    event: "end",
+    at: ahora.toISOString(),
+    ok,
+    created,
+    skippedExists,
+    failed,
+    slotsAttempted,
+    durationTotalMs,
+  });
+
   return {
-    ok: failed === 0,
-    processed: results.length,
+    ok,
+    processed: slotsAttempted,
+    slotsAttempted,
     created,
     skippedExists,
     failed,
     results,
     catalogSize,
     at: ahora.toISOString(),
+    durationTotalMs,
   };
 }

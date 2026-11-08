@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AdminFilaResultado } from "@/app/admin/AdminFilaResultado";
+import { AdminSorteosAtrasados } from "@/app/admin/AdminSorteosAtrasados";
 import {
   HORAS_SORTEO,
   formatearFechaLargaDesdeDate,
   formatearHoraSorteo,
+  fechaHoyParaPrisma,
   hoyYYYYMMDD,
   parseFechaYYYYMMDD,
+  sumarDiasUTC,
+  fechaAYYYYMMDD,
 } from "@/lib/fecha";
 import { prisma } from "@/lib/prisma";
+import { ATRASADOS_DEFAULT_LOOKBACK_DAYS } from "@/lib/resultados/list-atrasados";
 import { Button, Card, Input, PageHeader, StatusBadge } from "@/components/ui";
 import { cn } from "@/components/ui/cn";
 
@@ -202,6 +207,16 @@ export default async function AdminPage({ searchParams }: Props) {
           );
         })}
       </ol>
+
+      <AdminSorteosAtrasados
+        desdeInicial={fechaAYYYYMMDD(
+          sumarDiasUTC(
+            fechaHoyParaPrisma(),
+            -ATRASADOS_DEFAULT_LOOKBACK_DAYS,
+          ),
+        )}
+        hastaInicial={fechaAYYYYMMDD(sumarDiasUTC(fechaHoyParaPrisma(), -1))}
+      />
     </main>
   );
 }
