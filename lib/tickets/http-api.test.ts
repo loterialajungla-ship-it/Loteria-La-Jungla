@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import {
@@ -19,6 +21,31 @@ import {
 } from "@/lib/creditos/errors";
 import { mapTicketErrorToHttp } from "@/lib/tickets/map-ticket-http-error";
 import { parseCreateTicketBody } from "@/lib/tickets/parse-create-ticket-body";
+
+describe("POST /api/venta/tickets — maxDuration (B5.5-B)", () => {
+  const routeSrc = readFileSync(
+    path.join(process.cwd(), "app/api/venta/tickets/route.ts"),
+    "utf8",
+  );
+  const createTicketSrc = readFileSync(
+    path.join(process.cwd(), "lib/tickets/create-ticket.ts"),
+    "utf8",
+  );
+
+  it("declara maxDuration=60 alineado con el timeout de la TX", () => {
+    assert.match(routeSrc, /export const maxDuration = 60/);
+    assert.match(createTicketSrc, /timeout:\s*60_000/);
+    assert.match(createTicketSrc, /maxWait:\s*30_000/);
+  });
+
+  it("no redefine opciones de transacción Prisma en la ruta HTTP", () => {
+    assert.doesNotMatch(routeSrc, /\$transaction/);
+    assert.doesNotMatch(routeSrc, /maxWait:\s*\d/);
+    assert.doesNotMatch(routeSrc, /timeout:\s*\d/);
+  });
+});
+
+
 
 describe("parseCreateTicketBody", () => {
   it("acepta body válido", () => {

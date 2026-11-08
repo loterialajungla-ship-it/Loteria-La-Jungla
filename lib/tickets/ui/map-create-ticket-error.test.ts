@@ -212,6 +212,17 @@ describe("mapCreateTicketClientResponse — otros errores existentes", () => {
     assert.equal(bare.message, CREATE_TICKET_GENERIC_FALLBACK);
   });
 
+  it("504 (p. ej. FUNCTION_INVOCATION_TIMEOUT) conserva idempotencyKey", () => {
+    const out = mapCreateTicketClientResponse(504, {
+      ok: false,
+      error: { code: "FUNCTION_INVOCATION_TIMEOUT" },
+    });
+    assert.equal(out.kind, "generic_error");
+    assert.equal(out.clearIdempotencyKey, false);
+    assert.equal(out.autoRetryPost, false);
+  });
+
+
   it("éxito limpia apuestas, key y refresca saldo; sin auto-retry", () => {
     const out = mapCreateTicketClientResponse(201, {
       ok: true,
@@ -256,8 +267,24 @@ describe("TicketPOS — integración del mapper (fuente)", () => {
     assert.equal(posts.length, 1);
   });
 
+  it("conserva idempotencyKeyRef entre reintentos manuales hasta éxito/conflicto", () => {
+    assert.match(src, /idempotencyKeyRef/);
+    assert.match(
+      src,
+      /Misma key mientras la operación pendiente\/reintento; nueva venta = nueva key/,
+    );
+    assert.match(src, /if \(!idempotencyKeyRef\.current\)/);
+    assert.match(src, /outcome\.clearIdempotencyKey/);
+    assert.doesNotMatch(src, /AbortSignal|AbortController|signal:/);
+    assert.match(
+      src,
+      /autoRetryPost siempre false: el vendedor reintenta manualmente/,
+    );
+  });
+
   it("Alert usa título y mensaje del error de presentación", () => {
     assert.match(src, /title=\{error\.title\}/);
     assert.match(src, /\{error\.message\}/);
   });
 });
+
