@@ -53,11 +53,12 @@ describe("validarHoraSorteo", () => {
   it("acepta hora válida de HORAS_SORTEO", () => {
     assert.doesNotThrow(() => validarHoraSorteo(10));
     assert.doesNotThrow(() => validarHoraSorteo(19));
+    assert.doesNotThrow(() => validarHoraSorteo(20));
   });
 
   it("rechaza hora inválida", () => {
     assert.throws(() => validarHoraSorteo(8), InvalidDrawHourError);
-    assert.throws(() => validarHoraSorteo(20), InvalidDrawHourError);
+    assert.throws(() => validarHoraSorteo(21), InvalidDrawHourError);
     assert.throws(() => validarHoraSorteo(10.5), InvalidDrawHourError);
   });
 });

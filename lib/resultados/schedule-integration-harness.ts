@@ -24,7 +24,7 @@ import {
 export const FECHA_SUITE = new Date(Date.UTC(2099, 10, 17));
 
 /**
- * Segunda fecha reservada (caso F / rollback). Las horas 9–19 de FECHA_SUITE
+ * Segunda fecha reservada (caso F / rollback). Las horas 9–20 de FECHA_SUITE
  * ya están ocupadas por A–E/G; F usa esta fecha + hora 9 para no solapar.
  */
 export const FECHA_SUITE_ROLLBACK = new Date(Date.UTC(2099, 10, 18));

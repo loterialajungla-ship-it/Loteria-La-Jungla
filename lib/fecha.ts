@@ -1,8 +1,8 @@
 /** Zona horaria de los sorteos. Usar esta misma fuente en admin y en la web pública. */
 export const ZONA_HORARIA_VE = "America/Caracas";
 
-/** 11 sorteos diarios, uno por hora. */
-export const HORAS_SORTEO = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] as const;
+/** 12 sorteos diarios, uno por hora (09:00–20:00 America/Caracas). */
+export const HORAS_SORTEO = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] as const;
 
 export type FechaHoraVE = {
   year: number;
@@ -119,7 +119,7 @@ export function haLlegadoFranja(horaFranja: number, ahora = new Date()): boolean
 }
 
 /**
- * True si la franja (fecha @db.Date + hora 9–19) aún no ha llegado
+ * True si la franja (fecha @db.Date + hora ∈ HORAS_SORTEO) aún no ha llegado
  * en America/Caracas: día futuro, o mismo día con hora estrictamente posterior.
  */
 export function esFranjaFutura(

@@ -82,6 +82,14 @@ describe("esHoraAbiertaParaVenta", () => {
       }),
       true,
     );
+    assert.equal(
+      esHoraAbiertaParaVenta({
+        hora: 20,
+        horaActualVe: 10,
+        horasConResultado: [9, 10],
+      }),
+      true,
+    );
   });
 });
 
@@ -91,9 +99,12 @@ describe("listarDisponibilidadHoras", () => {
       horaActualVe: 11,
       horasConResultado: [14],
     });
+    assert.equal(lista.length, 12);
+    assert.equal(lista[lista.length - 1]?.hora, 20);
     assert.equal(lista.find((h) => h.hora === 11)?.abierta, false);
     assert.equal(lista.find((h) => h.hora === 12)?.abierta, true);
     assert.equal(lista.find((h) => h.hora === 14)?.abierta, false);
+    assert.equal(lista.find((h) => h.hora === 20)?.abierta, true);
   });
 });
 

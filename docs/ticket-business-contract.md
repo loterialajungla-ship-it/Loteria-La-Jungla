@@ -41,7 +41,7 @@ Cualquier otra fecha → error de dominio (`InvalidGameDateError` → HTTP 400).
 
 ### Horas permitidas
 
-- Catálogo: `HORAS_SORTEO` = enteros **9 … 19** (11 sorteos/día).
+- Catálogo: `HORAS_SORTEO` = enteros **9 … 20** (12 sorteos/día).
 - Además debe estar **abierta** para venta (ver §5).
 
 ### Animales permitidos

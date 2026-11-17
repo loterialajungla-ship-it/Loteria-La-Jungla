@@ -70,14 +70,14 @@ describe("aggregateSalesByVendor", () => {
 });
 
 describe("aggregateSalesByHour", () => {
-  it("incluye las 11 HORAS_SORTEO en orden, ceros incluidos", () => {
+  it("incluye las 12 HORAS_SORTEO en orden, ceros incluidos", () => {
     const rows = aggregateSalesByHour([
       { hora: 14, numeroAnimal: "03", importe: "10.00" },
       { hora: 14, numeroAnimal: "05", importe: "2.50" },
       { hora: 9, numeroAnimal: "00", importe: "1.00" },
     ]);
     assert.equal(rows.length, HORAS_SORTEO.length);
-    assert.equal(rows.length, 11);
+    assert.equal(rows.length, 12);
     assert.deepEqual(
       rows.map((r) => r.hora),
       [...HORAS_SORTEO],
@@ -85,6 +85,7 @@ describe("aggregateSalesByHour", () => {
     assert.equal(rows.find((r) => r.hora === 9)!.totalJugado, "1.00");
     assert.equal(rows.find((r) => r.hora === 14)!.totalJugado, "12.50");
     assert.equal(rows.find((r) => r.hora === 10)!.totalJugado, "0.00");
+    assert.equal(rows.find((r) => r.hora === 20)!.totalJugado, "0.00");
   });
 
   it("suma por hora = SUM líneas (consistencia)", () => {

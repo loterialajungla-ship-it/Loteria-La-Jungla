@@ -60,7 +60,7 @@ export function assertHoraSorteoValida(hora: number): void {
   if (!(HORAS_SORTEO as readonly number[]).includes(hora)) {
     throw new ScheduleResultDomainError(
       "INVALID_HORA",
-      "La hora del sorteo no es válida (se esperan franjas 9–19).",
+      "La hora del sorteo no es válida (se esperan franjas 9–20).",
     );
   }
 }

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import type { EstadoResultadoProgramado } from "@prisma/client";
 import { ForbiddenError } from "@/lib/auth/errors";
-import { fechaAYYYYMMDD, parseFechaYYYYMMDD } from "@/lib/fecha";
+import { fechaAYYYYMMDD, HORAS_SORTEO, parseFechaYYYYMMDD } from "@/lib/fecha";
 import {
   ATRASADOS_DEFAULT_LOOKBACK_DAYS,
   ATRASADOS_RANGE_DAYS_MAX,
@@ -161,7 +161,7 @@ describe("listSorteosAtrasados — detección de solo lectura", () => {
     const db = makeDb({
       tickets: [{ fechaJuego: d(ANTEAYER) }],
       resultados: [
-        // Solo hora 9 publicada ayer; 10–19 faltan
+        // Solo hora 9 publicada ayer; 10–20 faltan
         { fecha: d(AYER), hora: 9 },
       ],
     });
@@ -171,11 +171,12 @@ describe("listSorteosAtrasados — detección de solo lectura", () => {
       AHORA,
     );
     assert.ok(result.items.some((i) => i.fecha === AYER && i.hora === 10));
+    assert.ok(result.items.some((i) => i.fecha === AYER && i.hora === 20));
     assert.equal(
       result.items.find((i) => i.hora === 9),
       undefined,
     );
-    assert.equal(result.resumen.totalSinResultado, 10);
+    assert.equal(result.resumen.totalSinResultado, 11);
   });
 
   it("2) una franja de ayer con resultado no aparece", async () => {
@@ -282,27 +283,30 @@ describe("listSorteosAtrasados — detección de solo lectura", () => {
     const db = makeDb({
       tickets: [{ fechaJuego: d(ANTEAYER) }],
     });
+    // pageSize = 12 (= HORAS_SORTEO.length): una página por día calendario.
     const page1 = await listSorteosAtrasados(
       db,
-      { desde: ANTEAYER, hasta: AYER, page: 1, pageSize: 11 },
+      { desde: ANTEAYER, hasta: AYER, page: 1, pageSize: 12 },
       AHORA,
     );
-    assert.equal(page1.total, 22);
-    assert.equal(page1.items.length, 11);
+    assert.equal(page1.total, 24);
+    assert.equal(page1.items.length, 12);
     assert.equal(page1.totalPages, 2);
     assert.equal(page1.rango.desde, ANTEAYER);
     assert.equal(page1.rango.hasta, AYER);
     assert.equal(page1.items[0]?.fecha, ANTEAYER);
     assert.equal(page1.items[0]?.hora, 9);
+    assert.equal(page1.items[11]?.hora, 20);
 
     const page2 = await listSorteosAtrasados(
       db,
-      { desde: ANTEAYER, hasta: AYER, page: 2, pageSize: 11 },
+      { desde: ANTEAYER, hasta: AYER, page: 2, pageSize: 12 },
       AHORA,
     );
-    assert.equal(page2.items.length, 11);
+    assert.equal(page2.items.length, 12);
     assert.equal(page2.items[0]?.fecha, AYER);
     assert.equal(page2.items[0]?.hora, 9);
+    assert.equal(page2.items[11]?.hora, 20);
   });
 
   it("10) la consulta no ejecuta servicios de publicación ni escrituras", async () => {
@@ -385,9 +389,9 @@ describe("listSorteosAtrasados — detección de solo lectura", () => {
       { desde: AYER, hasta: AYER, page: 1, pageSize: 3 },
       AHORA,
     );
-    assert.equal(result.resumen.totalSinResultado, 9);
+    assert.equal(result.resumen.totalSinResultado, 10);
     assert.equal(result.resumen.totalConProgramacionPendiente, 2);
-    assert.equal(result.resumen.totalSinProgramacionPendiente, 7);
+    assert.equal(result.resumen.totalSinProgramacionPendiente, 8);
     assert.equal(result.items.length, 3);
     assert.equal(
       result.resumen.totalSinResultado,
@@ -407,7 +411,7 @@ describe("listSorteosAtrasados — detección de solo lectura", () => {
 });
 
 function HORAS_ALL_PUBLISHED(fechaStr: string): ResultadoRow[] {
-  return [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map((hora) => ({
+  return HORAS_SORTEO.map((hora) => ({
     fecha: d(fechaStr),
     hora,
   }));
