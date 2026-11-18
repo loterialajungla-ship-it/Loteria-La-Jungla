@@ -196,11 +196,17 @@ function makeFakeDb(opts?: {
 }
 
 describe("assertHoraSorteoValida / assertScheduleEstadoModifiable", () => {
-  it("acepta horas 9–19 y rechaza fuera de rango", () => {
+  it("acepta horas 9–20 y rechaza fuera de rango", () => {
     assert.doesNotThrow(() => assertHoraSorteoValida(9));
     assert.doesNotThrow(() => assertHoraSorteoValida(19));
+    assert.doesNotThrow(() => assertHoraSorteoValida(20));
     assert.throws(
       () => assertHoraSorteoValida(8),
+      (e: unknown) =>
+        e instanceof ScheduleResultDomainError && e.code === "INVALID_HORA",
+    );
+    assert.throws(
+      () => assertHoraSorteoValida(21),
       (e: unknown) =>
         e instanceof ScheduleResultDomainError && e.code === "INVALID_HORA",
     );

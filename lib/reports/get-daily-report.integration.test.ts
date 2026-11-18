@@ -225,7 +225,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
     assert.ok(Number(sin.totalJugado) >= 3);
 
     assert.equal(reporte.porHora.length, HORAS_SORTEO.length);
-    assert.equal(reporte.porHora.length, 11);
+    assert.equal(reporte.porHora.length, 12);
 
     const h14Base =
       baseline.porHora.find((h) => h.hora === 14)?.totalJugado ?? "0.00";
@@ -258,7 +258,7 @@ describe("integración PostgreSQL — reportes diarios", { skip: !ENABLED }, () 
       moneyAdd(a05Base, "5.00"),
     );
 
-    assert.equal(reporte.exposicion.length, 11);
+    assert.equal(reporte.exposicion.length, 12);
     assert.doesNotMatch(JSON.stringify(reporte), /passwordHash/);
     assert.ok(t1.ticket.totalApostado);
   });

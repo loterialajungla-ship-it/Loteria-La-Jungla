@@ -104,7 +104,7 @@ Cada línea = **una apuesta** = `fechaJuego` (heredada del ticket) + `hora` + `a
 |-------|-----------|
 | `id` | PK interna |
 | `ticketId` | FK → Ticket |
-| `hora` | Int ∈ `HORAS_SORTEO` (9–19) |
+| `hora` | Int ∈ `HORAS_SORTEO` (9–20) |
 | `numeroAnimal` | FK → `Animal.numero` (String) |
 | `nombreAnimalSnapshot` | Nombre al momento de la venta (histórico) |
 | `importe` | Decimal/centavos (ver §25) |

@@ -1269,7 +1269,7 @@ describe("acceptance — auth + tickets + liquidación", { skip: !ENABLED }, () 
     const vendRow = reporte.porVendedor.find((v) => v.vendedorId === vendor.id);
     assert.ok(vendRow);
     assert.equal(vendRow!.totalJugado, "10.00");
-    assert.equal(reporte.porHora.length, 11);
+    assert.equal(reporte.porHora.length, 12);
     assert.equal(
       canAccessAdminApi({
         id: adminId,

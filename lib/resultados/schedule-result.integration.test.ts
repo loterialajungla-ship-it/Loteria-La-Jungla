@@ -37,7 +37,7 @@ const ENABLED = process.env.RUN_INTEGRATION === "1";
 /** Reloj inyectado solo para metadatos de auditoría de auto-publish (no define el día Caracas). */
 const AHORA_INYECTADO = new Date(Date.UTC(2099, 10, 17, 20, 0, 0));
 
-/** Asignación de horas 9–19: un slot por caso (colisión solo cuando es intencional). */
+/** Asignación de horas 9–20: un slot por caso (colisión solo cuando es intencional). */
 const HORA = {
   A_CREATE: 9,
   B_MODIFY_CANCEL: 10,

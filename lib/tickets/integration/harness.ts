@@ -16,7 +16,7 @@ import {
   assertIntegrationWriteTarget,
 } from "@/lib/db/neon-endpoint-guard";
 
-/** 2026-10-02 12:00 UTC ≈ 08:00 America/Caracas → horas 9–19 abiertas. */
+/** 2026-10-02 12:00 UTC ≈ 08:00 America/Caracas → horas 9–20 abiertas. */
 export const AHORA_VE_MANANA = new Date(Date.UTC(2026, 9, 2, 12, 0, 0));
 
 /** Medianoche UTC del día de juego fijo de las pruebas. */

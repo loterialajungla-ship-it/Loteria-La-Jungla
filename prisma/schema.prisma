@@ -54,7 +54,7 @@ model Resultado {
 
   fecha     DateTime        @db.Date
 
-  hora      Int // hora del sorteo, 9 a 19 (11 sorteos/día, uno cada hora)
+  hora      Int // hora del sorteo ∈ HORAS_SORTEO (9–20; 12 sorteos/día, uno cada hora)
 
   numero    String
 

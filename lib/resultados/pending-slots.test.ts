@@ -21,12 +21,22 @@ describe("listDueDrawSlots (America/Caracas)", () => {
     );
   });
 
-  it("a las 19:00 VE incluye las 11 franjas del día", () => {
+  it("a las 19:00 VE incluye las franjas 9–19 (aún no la 20)", () => {
     // 2026-10-02 23:00 UTC = 19:00 America/Caracas
     const slots = listDueDrawSlots(new Date(Date.UTC(2026, 9, 2, 23, 0, 0)));
     assert.deepEqual(
       slots.map((s) => s.hora),
       [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+    );
+  });
+
+  it("a las 20:00 VE incluye las 12 franjas del día", () => {
+    // 2026-10-03 00:00 UTC = 20:00 America/Caracas del 2026-10-02
+    const slots = listDueDrawSlots(new Date(Date.UTC(2026, 9, 3, 0, 0, 0)));
+    assert.equal(fechaAYYYYMMDD(slots[0]!.fecha), "2026-10-02");
+    assert.deepEqual(
+      slots.map((s) => s.hora),
+      [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
     );
   });
 
